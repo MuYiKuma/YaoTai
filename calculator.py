@@ -19,3 +19,33 @@ def calculate_available_energy(input_data: StorageSiteInput) -> float:
         * input_data.soh
         * input_data.efficiency
     )
+
+
+def calculate_arbitrage_revenue(input_data: StorageSiteInput) -> float:
+    """Calculate annual arbitrage revenue for a storage site.
+
+    Revenue is based on available energy, seasonal price spreads, expected daily
+    cycles, and a fixed round-trip efficiency adjustment factor.
+
+    Args:
+        input_data: Storage site input parameters.
+
+    Returns:
+        The total annual arbitrage revenue.
+    """
+    available_energy: float = calculate_available_energy(input_data)
+    summer_revenue: float = (
+        available_energy
+        * input_data.summer_spread
+        * input_data.summer_cycles_per_day
+        * 107
+    )
+    non_summer_revenue: float = (
+        available_energy
+        * input_data.non_summer_spread
+        * input_data.non_summer_cycles_per_day
+        * 141
+    )
+
+    return (summer_revenue + non_summer_revenue) * 0.927
+
