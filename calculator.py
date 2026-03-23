@@ -49,3 +49,41 @@ def calculate_arbitrage_revenue(input_data: StorageSiteInput) -> float:
 
     return (summer_revenue + non_summer_revenue) * 0.927
 
+
+def calculate_arbitrage_revenue_breakdown(input_data: StorageSiteInput) -> dict:
+    """Calculate annual arbitrage revenue and provide a seasonal breakdown.
+
+    The breakdown uses the available energy, seasonal price spreads, expected
+    daily cycles, and the same annual day counts as the aggregate arbitrage
+    calculation.
+
+    Args:
+        input_data: Storage site input parameters.
+
+    Returns:
+        A dictionary containing available energy, summer revenue,
+        non-summer revenue, and total revenue.
+    """
+    available_energy: float = calculate_available_energy(input_data)
+    summer_revenue: float = (
+        available_energy
+        * input_data.summer_spread
+        * input_data.summer_cycles_per_day
+        * 107
+        * 0.927
+    )
+    non_summer_revenue: float = (
+        available_energy
+        * input_data.non_summer_spread
+        * input_data.non_summer_cycles_per_day
+        * 141
+        * 0.927
+    )
+    total_revenue: float = summer_revenue + non_summer_revenue
+
+    return {
+        "available_energy": available_energy,
+        "summer_revenue": summer_revenue,
+        "non_summer_revenue": non_summer_revenue,
+        "total_revenue": total_revenue,
+    }
