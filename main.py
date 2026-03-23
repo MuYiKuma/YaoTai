@@ -1,6 +1,4 @@
 from storage_site_input import StorageSiteInput
-
-
 def build_test_data() -> list[StorageSiteInput]:
     return [
         StorageSiteInput(
@@ -26,10 +24,10 @@ def build_test_data() -> list[StorageSiteInput]:
 
 def run_demo() -> None:
     test_data = build_test_data()
+
     print("StorageSiteInput demo data:")
     for item in test_data:
         print(item)
-
 
 if __name__ == "__main__":
     run_demo()

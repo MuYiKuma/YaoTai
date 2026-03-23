@@ -36,3 +36,4 @@ class StorageSiteInput:
     sr_price: float = field(default=0.0, metadata={"unit": "NTD/kW"})
     sr_hours_per_day: float = field(default=0.0, metadata={"unit": "hour/day"})
     sr_execution_rate: float = field(default=1.0, metadata={"unit": "ratio"})
+
