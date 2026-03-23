@@ -87,3 +87,56 @@ def calculate_arbitrage_revenue_breakdown(input_data: StorageSiteInput) -> dict:
         "non_summer_revenue": non_summer_revenue,
         "total_revenue": total_revenue,
     }
+
+
+def detect_arbitrage_risk(input_data: StorageSiteInput) -> dict:
+    """Assess arbitrage assumptions and classify the storage site's risk level.
+
+    This helper first computes the seasonal revenue breakdown, then evaluates
+    whether the arbitrage case relies on unusually strong non-summer revenue,
+    aggressive cycling assumptions, unusually large price spread assumptions, or
+    an invalid / unmodeled efficiency range.
+
+    Args:
+        input_data: Storage site input parameters.
+
+    Returns:
+        A dictionary with the overall risk level and a list of human-readable
+        reasons explaining the decision.
+    """
+    breakdown: dict = calculate_arbitrage_revenue_breakdown(input_data)
+    reasons: list[str] = []
+    risk_level: str = "low"
+
+    if breakdown["non_summer_revenue"] > breakdown["summer_revenue"]:
+        reasons.append(
+            "非夏月套利收入高於夏月套利收入，代表收益結構偏向較不穩定的非夏月情境。"
+        )
+        risk_level = "high"
+
+    if input_data.non_summer_cycles_per_day > 1.5:
+        reasons.append(
+            "非夏月每日循環次數高於 1.5 次，表示模型假設使用頻率偏高，執行風險較大。"
+        )
+        risk_level = "high"
+
+    spread: float = max(input_data.summer_spread, input_data.non_summer_spread)
+    if spread > 3:
+        reasons.append(
+            "價差假設大於 3 元/度，對市場價差的依賴較高，需留意中度風險。"
+        )
+        if risk_level != "high":
+            risk_level = "medium"
+
+    if input_data.efficiency < 0.9 or input_data.efficiency > 1:
+        reasons.append(
+            "效率參數未落在合理區間（0.9 至 1），代表效率假設可能未妥善考慮，屬高風險。"
+        )
+        risk_level = "high"
+
+    if not reasons:
+        reasons.append(
+            "目前套利假設落在合理區間內，夏月收益占比與循環、效率假設皆未見明顯風險。"
+        )
+
+    return {"risk_level": risk_level, "reasons": reasons}
