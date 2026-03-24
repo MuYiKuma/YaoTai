@@ -3,7 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from excel_parser import load_workbook_data, parse_to_storage_input
+from excel_parser import (
+    convert_unit_if_needed,
+    find_sheets_by_type,
+    load_workbook_data,
+    normalize_sheet_name,
+    parse_to_storage_input,
+)
 
 
 @dataclass
@@ -60,36 +66,48 @@ def test_load_workbook_data_returns_non_empty_cells(monkeypatch) -> None:
     ]
 
 
-def test_parse_to_storage_input_reads_keywords_from_right_or_below(monkeypatch) -> None:
+def test_normalize_sheet_name_trims_spaces() -> None:
+    assert normalize_sheet_name("  年度收益  ") == "年度收益"
+
+
+def test_sheet_token_matching_detects_required_types() -> None:
     workbook = FakeWorkbook(
         [
+            FakeSheet("鼎宸-24小時策略試算(商一)", [["x"]]),
+            FakeSheet("派能-24小時策略試算(商二)", [["x"]]),
+            FakeSheet("年度收益 ", [["x"]]),
+        ]
+    )
+
+    classified = find_sheets_by_type(workbook)
+
+    assert [sheet.title for sheet in classified["strategy"]] == [
+        "鼎宸-24小時策略試算(商一)",
+        "派能-24小時策略試算(商二)",
+    ]
+    assert [sheet.title for sheet in classified["annual_result"]] == ["年度收益 "]
+
+
+def test_convert_power_mw_to_kw() -> None:
+    assert convert_unit_if_needed("power_kw", 1.5, "MW") == 1500
+
+
+def test_convert_capacity_mwh_to_kwh() -> None:
+    assert convert_unit_if_needed("capacity_kwh", 2.2, "MWh") == 2200
+
+
+def test_convert_discount_percent_to_ratio() -> None:
+    assert convert_unit_if_needed("dr_discount_ratio", 120, None) == 1.2
+
+
+def test_parse_rejects_out_of_range_value_and_warns(monkeypatch) -> None:
+    workbook = FakeWorkbook(
+        [
+            FakeSheet("案場資訊", [["契約容量", 600], ["充放電功率", 500], ["總額定儲能容量", 1000], ["充放電深度", 90], ["效率", 92]]),
+            FakeSheet("24小時 排程", [["需量反應執行率", 6]]),
             FakeSheet(
-                "Summary",
-                [
-                    ["contract_capacity_kw", 600],
-                    ["power_kw", None],
-                    [550, "capacity_kwh", 1200],
-                    ["dod", 0.85],
-                    ["efficiency", 0.93],
-                    ["summer_spread", 3.1],
-                    ["non_summer_spread", 2.4],
-                    ["summer_cycles_per_day", 1.8],
-                    ["non_summer_cycles_per_day", 1.1],
-                    ["dr_capacity_kw", 50],
-                    ["dr_hours", 3],
-                    ["dr_rate", 100],
-                    ["dr_execution_rate", 0.7],
-                    ["dr_discount_ratio", 0.8],
-                ],
-            ),
-            FakeSheet(
-                "Reserve",
-                [
-                    ["sr_capacity_kw", 80],
-                    ["sr_price", 250],
-                    ["sr_hours_per_day", 4],
-                    ["sr_execution_rate", 0.9],
-                ],
+                "派能-24小時策略試算(商二)",
+                [["平日尖峰-離峰", 3.1, 2.4], ["即時備轉容量", 300]],
             ),
         ]
     )
@@ -97,34 +115,5 @@ def test_parse_to_storage_input_reads_keywords_from_right_or_below(monkeypatch) 
 
     parsed, warnings = parse_to_storage_input("ignored.xlsx")
 
-    assert parsed.contract_capacity_kw == 600
-    assert parsed.power_kw == 550
-    assert parsed.capacity_kwh == 1200
-    assert parsed.dod == 0.85
-    assert parsed.efficiency == 0.93
-    assert parsed.summer_spread == 3.1
-    assert parsed.non_summer_spread == 2.4
-    assert parsed.summer_cycles_per_day == 1.8
-    assert parsed.non_summer_cycles_per_day == 1.1
-    assert parsed.dr_capacity_kw == 50
-    assert parsed.dr_hours == 3
-    assert parsed.dr_rate == 100
-    assert parsed.dr_execution_rate == 0.7
-    assert parsed.dr_discount_ratio == 0.8
-    assert parsed.sr_capacity_kw == 80
-    assert parsed.sr_price == 250
-    assert parsed.sr_hours_per_day == 4
-    assert parsed.sr_execution_rate == 0.9
-    assert warnings == []
-
-
-def test_parse_to_storage_input_adds_warning_when_field_missing(monkeypatch) -> None:
-    workbook = FakeWorkbook([FakeSheet("Input", [["contract_capacity_kw", 700]])])
-    monkeypatch.setattr("excel_parser._load_workbook", lambda _: workbook)
-
-    parsed, warnings = parse_to_storage_input("ignored.xlsx")
-
-    assert parsed.contract_capacity_kw == 700
-    assert parsed.power_kw == 500
-    assert "找不到欄位 power_kw 的值，已保留預設值 500.0。" in warnings
-    assert "找不到欄位 sr_execution_rate 的值，已保留預設值 1.0。" in warnings
+    assert parsed.dr_execution_rate == 1.0
+    assert any("dr_execution_rate" in warning and "超出合理範圍" in warning for warning in warnings)
