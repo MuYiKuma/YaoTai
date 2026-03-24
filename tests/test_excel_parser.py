@@ -115,5 +115,5 @@ def test_parse_rejects_out_of_range_value_and_warns(monkeypatch) -> None:
 
     parsed, warnings = parse_to_storage_input("ignored.xlsx")
 
-    assert parsed.dr_execution_rate == 1.0
+    assert parsed.dr_discount_ratio == 0.0
     assert any("dr_execution_rate" in warning and "超出合理範圍" in warning for warning in warnings)
