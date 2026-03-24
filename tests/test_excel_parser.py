@@ -100,6 +100,61 @@ def test_convert_discount_percent_to_ratio() -> None:
     assert convert_unit_if_needed("dr_discount_ratio", 120, None) == 1.2
 
 
+def test_convert_discount_percent_text_to_ratio() -> None:
+    assert convert_unit_if_needed("dr_discount_ratio", 120, "120%") == 1.2
+
+
+def test_efficiency_prefers_efficiency_not_loss(monkeypatch) -> None:
+    workbook = FakeWorkbook(
+        [
+            FakeSheet("案場資訊", [["效率損失", "8%"], ["轉換效率", "92%"]]),
+            FakeSheet("24小時 排程", [["x"]]),
+            FakeSheet("派能-24小時策略試算(商二)", [["平日尖峰-離峰", 3.1, 2.4]]),
+        ]
+    )
+    monkeypatch.setattr("excel_parser._load_workbook", lambda _: workbook)
+
+    parsed, _ = parse_to_storage_input("ignored.xlsx")
+
+    assert parsed.efficiency == 0.92
+
+
+def test_sr_price_avoids_first_non_price_numeric(monkeypatch) -> None:
+    workbook = FakeWorkbook(
+        [
+            FakeSheet("案場資訊", [["契約容量", 600], ["充放電功率", 500], ["總額定儲能容量", 1000], ["充放電深度", 90], ["效率", 92]]),
+            FakeSheet("24小時 排程", [["x"]]),
+            FakeSheet(
+                "派能-24小時策略試算(商二)",
+                [
+                    ["平日尖峰-離峰", 3.1, 2.4],
+                    ["首年容量費", 100, "NTD/kW-月"],
+                ],
+            ),
+        ]
+    )
+    monkeypatch.setattr("excel_parser._load_workbook", lambda _: workbook)
+
+    parsed, _ = parse_to_storage_input("ignored.xlsx")
+    assert parsed.sr_price == 100
+
+
+def test_dr_hours_with_only_options_keeps_default(monkeypatch) -> None:
+    workbook = FakeWorkbook(
+        [
+            FakeSheet("案場資訊", [["契約容量", 600], ["充放電功率", 500], ["總額定儲能容量", 1000], ["充放電深度", 90], ["效率", 92]]),
+            FakeSheet("24小時 排程", [["連續2小時", 2], ["連續4小時", 4], ["連續6小時", 6]]),
+            FakeSheet("派能-24小時策略試算(商二)", [["平日尖峰-離峰", 3.1, 2.4]]),
+        ]
+    )
+    monkeypatch.setattr("excel_parser._load_workbook", lambda _: workbook)
+
+    parsed, warnings = parse_to_storage_input("ignored.xlsx")
+
+    assert parsed.dr_hours == 2.0
+    assert any("dr_hours" in warning for warning in warnings)
+
+
 def test_parse_rejects_out_of_range_value_and_warns(monkeypatch) -> None:
     workbook = FakeWorkbook(
         [
