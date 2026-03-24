@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import fields
 import re
 from typing import Any
 
@@ -21,6 +20,8 @@ SHEET_MATCH_MODE: dict[str, str] = {
     "annual_result": "any",
 }
 
+# 這裡仍保留「舊 parser vocabulary」
+# 由 parser 先抓值，再透過 mapping 轉成新 StorageSiteInput schema
 LABEL_GROUPS: dict[str, tuple[str, ...]] = {
     "contract_capacity_kw": ("用戶經常契約容量", "契約容量", "經常契約容量"),
     "power_kw": (
@@ -29,7 +30,12 @@ LABEL_GROUPS: dict[str, tuple[str, ...]] = {
         "充放電功率",
         "額定輸出功率",
     ),
-    "capacity_kwh": ("電池度數", "儲能額定可儲存能量", "額定可儲存能量", "總額定儲能容量"),
+    "capacity_kwh": (
+        "電池度數",
+        "儲能額定可儲存能量",
+        "額定可儲存能量",
+        "總額定儲能容量",
+    ),
     "dod": ("充放電深度", "DoD", "depth of discharge"),
     "efficiency": ("效率", "轉換效率", "round trip efficiency", "RTE"),
     "summer_spread": ("平日尖峰 離峰", "平日尖峰-離峰", "夏月價差"),
@@ -43,6 +49,13 @@ LABEL_GROUPS: dict[str, tuple[str, ...]] = {
     "sr_price": ("首年容量費", "容量費"),
     "sr_hours_per_day": ("待命時數", "即時備轉每日時數", "運行小時", "即時備轉時數"),
     "sr_execution_rate": ("投標執行率", "即時備轉執行率"),
+    # 可選欄位，抓不到就用預設
+    "soh": ("SOH", "健康度"),
+    "degradation_rate": ("年平均衰退率", "年衰退率", "衰退率"),
+    "min_demand_kw": ("最低需量", "最低需量限制"),
+    "analysis_years": ("財務分析年限", "分析年限"),
+    "electricity_price_escalation_rate": ("電價年漲幅率", "電價漲幅率"),
+    "discount_rate": ("折現率",),
 }
 
 DEFAULT_SEARCH_OFFSETS: tuple[tuple[int, int], ...] = ((0, 1), (0, 2), (1, 0), (2, 0))
@@ -53,12 +66,16 @@ PERCENTAGE_FIELDS = {
     "dr_execution_rate",
     "dr_discount_ratio",
     "sr_execution_rate",
+    "soh",
+    "degradation_rate",
+    "electricity_price_escalation_rate",
+    "discount_rate",
 }
 
 VALUE_RANGES: dict[str, tuple[float, float]] = {
-    "contract_capacity_kw": (100, 50000),
-    "power_kw": (10, 10000),
-    "capacity_kwh": (10, 50000),
+    "contract_capacity_kw": (0, 50000),
+    "power_kw": (0, 10000),
+    "capacity_kwh": (0, 50000),
     "dod": (0, 1),
     "efficiency": (0, 1),
     "summer_spread": (0, 20),
@@ -67,13 +84,19 @@ VALUE_RANGES: dict[str, tuple[float, float]] = {
     "non_summer_cycles_per_day": (0, 5),
     "dr_capacity_kw": (0, 10000),
     "dr_hours": (0, 24),
-    "dr_rate": (0, 20),
-    "dr_execution_rate": (0, 1.2),
-    "dr_discount_ratio": (0, 2),
+    "dr_rate": (0, 100000),
+    "dr_execution_rate": (0, 100000),
+    "dr_discount_ratio": (0, 1),
     "sr_capacity_kw": (0, 10000),
-    "sr_price": (0, 10000),
+    "sr_price": (0, 100000),
     "sr_hours_per_day": (0, 24),
     "sr_execution_rate": (0, 1),
+    "soh": (0, 1),
+    "degradation_rate": (0, 1),
+    "min_demand_kw": (0, 50000),
+    "analysis_years": (0, 100),
+    "electricity_price_escalation_rate": (0, 1),
+    "discount_rate": (0, 1),
 }
 
 _NUMBER_PATTERN = re.compile(r"[-+]?\d+(?:\.\d+)?")
@@ -96,7 +119,7 @@ def _normalize_text(value: Any) -> str:
 
 
 def sheet_matches_tokens(sheet_name: str, tokens: list[str] | tuple[str, ...]) -> bool:
-    """Return True if all tokens appear in normalized sheet name."""
+    """Return True if sheet name matches target tokens."""
     normalized_sheet = _normalize_text(normalize_sheet_name(sheet_name))
     normalized_tokens = [_normalize_text(token) for token in tokens]
     if any(token in ("策略試算", "排程") for token in tokens):
@@ -115,10 +138,12 @@ def find_sheets_by_type(workbook: Any) -> dict[str, list[Any]]:
             match_mode = SHEET_MATCH_MODE[sheet_type]
             normalized_tokens = [_normalize_text(token) for token in tokens]
             normalized_sheet = _normalize_text(normalized_name)
+
             if match_mode == "all":
                 matched = all(token in normalized_sheet for token in normalized_tokens)
             else:
                 matched = any(token in normalized_sheet for token in normalized_tokens)
+
             if matched:
                 result[sheet_type].append(sheet)
                 print(f"[excel_parser] 辨識為 {sheet_type}: {normalized_name}")
@@ -200,13 +225,6 @@ def convert_unit_if_needed(field_name: str, value: float, unit_text: str | None)
         return value
 
     if field_name in PERCENTAGE_FIELDS and 1 < value <= 100:
-        if field_name in {"dr_execution_rate", "sr_execution_rate"}:
-            is_percent_text = "%" in (unit_text or "") or "百分" in (unit_text or "")
-            if not is_percent_text and value <= 10:
-                return value
-        return value / 100
-
-    if field_name == "dr_discount_ratio" and value > 100:
         return value / 100
 
     return value
@@ -214,6 +232,9 @@ def convert_unit_if_needed(field_name: str, value: float, unit_text: str | None)
 
 def validate_parsed_value(field_name: str, value: float) -> tuple[bool, str | None]:
     """Validate parsed value against field range."""
+    if field_name not in VALUE_RANGES:
+        return True, None
+
     min_value, max_value = VALUE_RANGES[field_name]
     if min_value <= value <= max_value:
         return True, None
@@ -246,14 +267,17 @@ def _parse_spreads_from_strategy(sheet: Any) -> dict[str, tuple[float, str | Non
 def _choose_strategy_sheet(strategy_sheets: list[Any], strategy_sheet_name: str | None) -> Any | None:
     if not strategy_sheets:
         return None
+
     if strategy_sheet_name:
         target = normalize_sheet_name(strategy_sheet_name)
         for sheet in strategy_sheets:
             if normalize_sheet_name(sheet.title) == target:
                 return sheet
+
     for sheet in strategy_sheets:
         if "商二" in normalize_sheet_name(sheet.title):
             return sheet
+
     return strategy_sheets[0]
 
 
@@ -262,6 +286,62 @@ def _parse_field_from_sheet(sheet: Any, field_name: str) -> tuple[float, str | N
     if label_cell is None:
         return None
     return find_neighbor_numeric_value(sheet, label_cell.row, label_cell.column)
+
+
+def map_parsed_values_to_storage_input(parsed_values: dict[str, float]) -> StorageSiteInput:
+    """Map legacy parser fields into the current StorageSiteInput schema."""
+    return StorageSiteInput(
+        # Site / System Basics
+        contract_capacity_kw=parsed_values.get("contract_capacity_kw", 0.0),
+        power_kw=parsed_values.get("power_kw", 0.0),
+        capacity_kwh=parsed_values.get("capacity_kwh", 0.0),
+
+        # Battery / Technical Parameters
+        dod=parsed_values.get("dod", 0.95),
+        round_trip_efficiency=parsed_values.get("efficiency", 0.875),
+        soh=parsed_values.get("soh", 1.0),
+        annual_degradation_rate=parsed_values.get("degradation_rate", 0.0),
+        min_demand_kw=parsed_values.get("min_demand_kw", 0.0),
+
+        # Arbitrage Inputs
+        summer_spread_per_kwh=parsed_values.get("summer_spread", 0.0),
+        non_summer_spread_per_kwh=parsed_values.get("non_summer_spread", 0.0),
+        summer_cycles_per_day=parsed_values.get("summer_cycles_per_day", 0.0),
+        non_summer_cycles_per_day=parsed_values.get("non_summer_cycles_per_day", 0.0),
+        summer_days_per_year=int(parsed_values.get("summer_days_per_year", 153)),
+        non_summer_days_per_year=int(parsed_values.get("non_summer_days_per_year", 212)),
+
+        # Demand Response (DR)
+        dr_enabled=(
+            parsed_values.get("dr_capacity_kw", 0.0) > 0
+            or parsed_values.get("dr_rate", 0.0) > 0
+        ),
+        dr_committed_capacity_kw=parsed_values.get("dr_capacity_kw", 0.0),
+        dr_event_hours=parsed_values.get("dr_hours", 0.0),
+        dr_events_per_year=parsed_values.get("dr_execution_rate", 0.0),
+        dr_price_per_kw_event=parsed_values.get("dr_rate", 0.0),
+        dr_discount_ratio=parsed_values.get("dr_discount_ratio", 0.0),
+
+        # Spinning Reserve (SR)
+        sr_enabled=(
+            parsed_values.get("sr_capacity_kw", 0.0) > 0
+            or parsed_values.get("sr_price", 0.0) > 0
+        ),
+        sr_bid_capacity_kw=parsed_values.get("sr_capacity_kw", 0.0),
+        sr_capacity_fee_per_mwh=parsed_values.get("sr_price", 0.0),
+        sr_performance_fee_per_mwh=0.0,
+        sr_standby_hours_per_day=parsed_values.get("sr_hours_per_day", 0.0),
+        sr_days_per_year=365,
+        sr_adjustment_factor=parsed_values.get("sr_execution_rate", 1.0),
+        sr_service_fee_ratio=0.0,
+
+        # Financial Inputs
+        analysis_years=int(parsed_values.get("analysis_years", 1)),
+        electricity_price_escalation_rate=parsed_values.get(
+            "electricity_price_escalation_rate", 0.0
+        ),
+        discount_rate=parsed_values.get("discount_rate", 0.0),
+    )
 
 
 def parse_to_storage_input(
@@ -285,6 +365,9 @@ def parse_to_storage_input(
         "capacity_kwh",
         "dod",
         "efficiency",
+        "soh",
+        "degradation_rate",
+        "min_demand_kw",
         "summer_spread",
         "non_summer_spread",
         "dr_capacity_kw",
@@ -296,12 +379,20 @@ def parse_to_storage_input(
         "sr_price",
         "sr_hours_per_day",
         "sr_execution_rate",
+        "analysis_years",
+        "electricity_price_escalation_rate",
+        "discount_rate",
     ]
 
-    source_sheets = [sheet for sheet in (case_sheet, schedule_sheet, selected_strategy_sheet) if sheet is not None]
+    source_sheets = [
+        sheet
+        for sheet in (case_sheet, schedule_sheet, selected_strategy_sheet)
+        if sheet is not None
+    ]
 
     if selected_strategy_sheet is not None:
         spread_pairs = _parse_spreads_from_strategy(selected_strategy_sheet)
+
         if "summer_spread" in spread_pairs:
             raw_value, unit_text = spread_pairs["summer_spread"]
             converted = convert_unit_if_needed("summer_spread", raw_value, unit_text)
@@ -353,15 +444,15 @@ def parse_to_storage_input(
         if unit_text is None:
             warnings.append(f"欄位 {field_name} 未明確提供單位，已直接採用數值 {raw_value}。")
 
-    for cycles_field in ("summer_cycles_per_day", "non_summer_cycles_per_day"):
-        warnings.append(f"找不到欄位 {cycles_field} 的值，已保留預設值。")
-        print(f"[excel_parser] 欄位 {cycles_field} fallback 到預設值")
+    # 目前 cycles/day 與季節天數若抓不到，先沿用 schema 預設值
+    for field_name in (
+        "summer_cycles_per_day",
+        "non_summer_cycles_per_day",
+        "summer_days_per_year",
+        "non_summer_days_per_year",
+    ):
+        if field_name not in parsed_values:
+            print(f"[excel_parser] 欄位 {field_name} fallback 到 schema 預設值")
 
-    init_values: dict[str, float] = {}
-    for field in fields(StorageSiteInput):
-        if field.name in parsed_values:
-            init_values[field.name] = parsed_values[field.name]
-        elif field.name in VALUE_RANGES:
-            print(f"[excel_parser] 欄位 {field.name} fallback 到預設值")
-
-    return StorageSiteInput(**init_values), warnings
+    mapped_input = map_parsed_values_to_storage_input(parsed_values)
+    return mapped_input, warnings
