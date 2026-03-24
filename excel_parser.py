@@ -51,9 +51,12 @@ PERCENTAGE_FIELDS = {
     "dod",
     "efficiency",
     "dr_execution_rate",
-    "dr_discount_ratio",
     "sr_execution_rate",
 }
+
+EFFICIENCY_EXCLUDE_TOKENS = ("loss", "耗損", "損失", "線損", "self discharge", "自放電")
+LOSS_LABEL_TOKENS = ("loss", "耗損", "損失", "線損", "self discharge", "自放電")
+PRICE_UNIT_TOKENS = ("ntd", "元", "$", "/kw", "kw/月", "kW/月", "每kw", "每 kW")
 
 VALUE_RANGES: dict[str, tuple[float, float]] = {
     "contract_capacity_kw": (100, 50000),
@@ -168,6 +171,20 @@ def find_label_cell(sheet: Any, label_candidates: list[str] | tuple[str, ...]) -
     return None
 
 
+def find_all_label_cells(sheet: Any, label_candidates: list[str] | tuple[str, ...]) -> list[Any]:
+    """Find all cells matching candidate label text."""
+    normalized_candidates = [_normalize_text(candidate) for candidate in label_candidates]
+    matched_cells: list[Any] = []
+    for row in sheet.iter_rows():
+        for cell in row:
+            if not isinstance(cell.value, str) or not cell.value.strip():
+                continue
+            normalized_cell = _normalize_text(cell.value)
+            if any(candidate in normalized_cell for candidate in normalized_candidates):
+                matched_cells.append(cell)
+    return matched_cells
+
+
 def find_neighbor_numeric_value(
     sheet: Any,
     row: int,
@@ -206,8 +223,14 @@ def convert_unit_if_needed(field_name: str, value: float, unit_text: str | None)
                 return value
         return value / 100
 
-    if field_name == "dr_discount_ratio" and value > 100:
-        return value / 100
+    if field_name == "dr_discount_ratio":
+        normalized = _normalize_text(unit_text or "")
+        is_percent = "%" in (unit_text or "") or "百分" in normalized
+        if is_percent and value > 1:
+            return value / 100
+        if not is_percent and value > 100:
+            return value / 100
+        return value
 
     return value
 
@@ -258,10 +281,109 @@ def _choose_strategy_sheet(strategy_sheets: list[Any], strategy_sheet_name: str 
 
 
 def _parse_field_from_sheet(sheet: Any, field_name: str) -> tuple[float, str | None] | None:
+    if field_name == "efficiency":
+        return _parse_efficiency_from_sheet(sheet)
+    if field_name == "sr_price":
+        return _parse_sr_price_from_sheet(sheet)
+    if field_name == "dr_hours":
+        return _parse_dr_hours_from_sheet(sheet)
+
     label_cell = find_label_cell(sheet, LABEL_GROUPS[field_name])
     if label_cell is None:
         return None
     return find_neighbor_numeric_value(sheet, label_cell.row, label_cell.column)
+
+
+def _parse_efficiency_from_sheet(sheet: Any) -> tuple[float, str | None] | None:
+    efficiency_candidates: list[tuple[float, str | None]] = []
+    loss_candidates: list[tuple[float, str | None]] = []
+    for row in sheet.iter_rows():
+        for cell in row:
+            if not isinstance(cell.value, str):
+                continue
+            normalized_label = _normalize_text(cell.value)
+            if any(token in normalized_label for token in LABEL_GROUPS["efficiency"]):
+                if any(token in normalized_label for token in EFFICIENCY_EXCLUDE_TOKENS):
+                    continue
+                parsed = find_neighbor_numeric_value(sheet, cell.row, cell.column)
+                if parsed is not None:
+                    efficiency_candidates.append(parsed)
+            if any(token in normalized_label for token in LOSS_LABEL_TOKENS):
+                parsed = find_neighbor_numeric_value(sheet, cell.row, cell.column)
+                if parsed is not None:
+                    raw_value, raw_text = parsed
+                    converted_loss = convert_unit_if_needed("efficiency", raw_value, raw_text)
+                    if 0 <= converted_loss <= 1:
+                        loss_candidates.append((1 - converted_loss, raw_text))
+    if efficiency_candidates:
+        return efficiency_candidates[0]
+    if loss_candidates:
+        return loss_candidates[0]
+    return None
+
+
+def _looks_like_price_text(text: str) -> bool:
+    normalized = _normalize_text(text)
+    return any(token in normalized for token in PRICE_UNIT_TOKENS)
+
+
+def _parse_sr_price_from_sheet(sheet: Any) -> tuple[float, str | None] | None:
+    label_cells = find_all_label_cells(sheet, LABEL_GROUPS["sr_price"])
+    if not label_cells:
+        return None
+
+    best: tuple[float, str | None] | None = None
+    for label_cell in label_cells:
+        label_text = str(label_cell.value)
+        normalized_label = _normalize_text(label_text)
+        if any(token in normalized_label for token in ("容量", "價格", "單價", "費")) is False:
+            continue
+        for col_offset in range(1, 6):
+            nearby_cell = sheet.cell(row=label_cell.row, column=label_cell.column + col_offset)
+            value = _extract_numeric(nearby_cell.value)
+            if value is None:
+                continue
+            raw_text = nearby_cell.value if isinstance(nearby_cell.value, str) else None
+            if raw_text and _looks_like_price_text(raw_text):
+                return value, raw_text
+
+            right_text = sheet.cell(row=nearby_cell.row, column=nearby_cell.column + 1).value
+            if isinstance(right_text, str) and _looks_like_price_text(right_text):
+                return value, right_text
+
+            if best is None:
+                best = (value, raw_text)
+    return best
+
+
+def _parse_dr_hours_from_sheet(sheet: Any) -> tuple[float, str | None] | None:
+    label_cells = find_all_label_cells(sheet, LABEL_GROUPS["dr_hours"])
+    direct_values: list[tuple[float, str | None]] = []
+    option_values: list[tuple[float, str | None]] = []
+
+    for label_cell in label_cells:
+        label_text = str(label_cell.value)
+        normalized = _normalize_text(label_text)
+        option_match = re.search(r"連續\s*(\d+(?:\.\d+)?)\s*小時", label_text)
+        if option_match:
+            option_values.append((float(option_match.group(1)), label_text))
+            continue
+
+        parsed = find_neighbor_numeric_value(sheet, label_cell.row, label_cell.column)
+        if parsed is None:
+            continue
+
+        value, raw_text = parsed
+        if "小時" in normalized or "hour" in normalized or (raw_text and ("小時" in str(raw_text) or "hour" in str(raw_text).lower())):
+            direct_values.append((value, raw_text))
+
+    if len(direct_values) == 1:
+        return direct_values[0]
+    if len(direct_values) > 1:
+        return None
+    if option_values:
+        return None
+    return None
 
 
 def parse_to_storage_input(
