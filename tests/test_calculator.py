@@ -1,4 +1,5 @@
 import pytest
+
 from calculator import (
     calculate_arbitrage_revenue_breakdown,
     calculate_available_energy,
@@ -96,3 +97,61 @@ def test_calculate_total_revenue_breakdown_aggregation() -> None:
     assert result["dr"]["total_revenue"] == 18000.0
     assert result["sr"]["total_revenue"] == 8000.0
     assert result["total_revenue"] == 226000.0
+
+
+def test_calculate_sr_revenue_breakdown_disabled_returns_zero() -> None:
+    input_data = StorageSiteInput(
+        sr_enabled=False,
+        sr_bid_capacity_kw=1000,
+        sr_standby_hours_per_day=2,
+        sr_capacity_fee_per_mwh=400,
+        sr_performance_fee_per_mwh=100,
+        sr_adjustment_factor=0.8,
+        sr_days_per_year=300,
+        sr_service_fee_ratio=0.1,
+    )
+
+    result = calculate_sr_revenue_breakdown(input_data)
+
+    assert result["bid_capacity_kw"] == 0.0
+    assert result["daily_gross_revenue"] == 0.0
+    assert result["annual_gross_revenue"] == 0.0
+    assert result["service_fee"] == 0.0
+    assert result["total_revenue"] == 0.0
+
+
+def test_calculate_arbitrage_revenue_breakdown_sensitive_to_efficiency() -> None:
+    high_efficiency_input = StorageSiteInput(
+        capacity_kwh=1000,
+        dod=1.0,
+        soh=1.0,
+        round_trip_efficiency=1.0,
+        summer_spread_per_kwh=2.0,
+        non_summer_spread_per_kwh=2.0,
+        summer_cycles_per_day=1.0,
+        non_summer_cycles_per_day=1.0,
+        summer_days_per_year=100,
+        non_summer_days_per_year=100,
+    )
+
+    low_efficiency_input = StorageSiteInput(
+        capacity_kwh=1000,
+        dod=1.0,
+        soh=1.0,
+        round_trip_efficiency=0.5,
+        summer_spread_per_kwh=2.0,
+        non_summer_spread_per_kwh=2.0,
+        summer_cycles_per_day=1.0,
+        non_summer_cycles_per_day=1.0,
+        summer_days_per_year=100,
+        non_summer_days_per_year=100,
+    )
+
+    high_result = calculate_arbitrage_revenue_breakdown(high_efficiency_input)
+    low_result = calculate_arbitrage_revenue_breakdown(low_efficiency_input)
+
+    assert high_result["available_energy_kwh"] == 1000.0
+    assert low_result["available_energy_kwh"] == 500.0
+    assert low_result["total_revenue"] < high_result["total_revenue"]
+    assert low_result["total_revenue"] == 200000.0
+    assert high_result["total_revenue"] == 400000.0
