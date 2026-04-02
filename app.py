@@ -3,21 +3,22 @@ from storage_site_input import StorageSiteInput
 from audit_layer import calculate_audited_revenue_breakdown, apply_scenario
 from strategy_rules import apply_strategy_constraints, generate_strategy_warnings
 
-# 👉 套用策略限制
-x, strategy_notes = apply_strategy_constraints(x)
-
-# 👉 產生警示
-strategy_warnings = generate_strategy_warnings(x)
-
 st.set_page_config(page_title="儲能案場審計工具", layout="wide")
 
 st.title("儲能案場審計工具")
 
-st.subheader("選擇情境")
-scenario = st.selectbox("情境", ["optimistic", "base", "conservative"], label_visibility="collapsed")
+# ===== 情境 =====
+scenario = st.selectbox("情境", ["樂觀情境", "基準情境", "保守情境"])
 
-st.subheader("基本輸入")
+scenario_map = {
+    "樂觀情境": "optimistic",
+    "基準情境": "base",
+    "保守情境": "conservative"
+}
 
+scenario_en = scenario_map[scenario]
+
+# ===== 輸入 =====
 col1, col2, col3 = st.columns(3)
 
 with col1:
@@ -26,7 +27,7 @@ with col1:
     dod = st.number_input("DoD", value=0.9)
     efficiency = st.number_input("效率", value=0.86)
     soh = st.number_input("SOH", value=1.0)
-    soc_window_ratio = st.number_input("SOC usable window", value=0.85)
+    soc_window_ratio = st.number_input("SOC window", value=0.85)
 
 with col2:
     summer_spread = st.number_input("夏季價差", value=2.5)
@@ -46,14 +47,17 @@ with col3:
     sr_execution_rate = st.number_input("SR 執行率", value=0.9)
 
     aggregator_share_ratio = st.number_input("聚合商分潤", value=0.2)
-    aggregator_fixed_fee = st.number_input("聚合商固定費 (/MW/年)", value=400000.0)
+    aggregator_fixed_fee = st.number_input("固定費 (/MW)", value=400000.0)
     ems_subscription_fee = st.number_input("EMS 年費", value=70992.0)
     insurance_cost = st.number_input("保險", value=120060.0)
     om_cost = st.number_input("O&M", value=204102.0)
     deposit_amount = st.number_input("保證金", value=153300.0)
-    deposit_cost_rate = st.number_input("保證金資金成本率", value=0.05)
+    deposit_cost_rate = st.number_input("保證金成本率", value=0.05)
 
+# ===== 按鈕 =====
 if st.button("跑審計", type="primary"):
+
+    # 👉 建立模型
     x = StorageSiteInput(
         power_kw=power_kw,
         capacity_kwh=capacity_kwh,
@@ -86,138 +90,51 @@ if st.button("跑審計", type="primary"):
         deposit_cost_rate=deposit_cost_rate,
     )
 
-    x = apply_scenario(x, scenario)
+    # 👉 套情境
+    x = apply_scenario(x, scenario_en)
+
+    # 👉 策略規則
+    x, strategy_notes = apply_strategy_constraints(x)
+    strategy_warnings = generate_strategy_warnings(x)
+
+    # 👉 計算
     result = calculate_audited_revenue_breakdown(x)
 
     baseline = result["baseline_revenue"]
     audited = result["audited_total_revenue"]
     owner_net = result["owner_net_revenue"]
 
-    
-
-    st.divider()
+    # ===== UI =====
     st.subheader("📊 審計結果")
-
-    # 👉 一定要先建立 columns
     c1, c2, c3 = st.columns(3)
-    
-    # 👉 再用
-    c1.metric("業務試算收入（未調整）", f"{baseline:,.0f}")
-    c2.metric("審計後可實現收入", f"{audited:,.0f}")
-    c3.metric("業主實際淨收益", f"{owner_net:,.0f}")
+    c1.metric("業務收入", f"{baseline:,.0f}")
+    c2.metric("審計收入", f"{audited:,.0f}")
+    c3.metric("淨收益", f"{owner_net:,.0f}")
 
-    st.subheader("⚠️ 風險提示")
-    st.subheader("⚠️ 策略調整與限制")
+    # ===== 策略 =====
+    st.subheader("⚠️ 策略調整")
+    for note in strategy_notes:
+        st.info(note)
 
-        for note in strategy_notes:
-            st.info(note)
-        
-        st.subheader("🚨 風險警示")
-        
-        for w in strategy_warnings:
-            st.warning(w)
+    # ===== 警示 =====
+    st.subheader("🚨 風險警示")
+    for w in strategy_warnings:
+        st.warning(w)
 
-    # 👉 先算 rating
-if owner_net > 0 and audited / baseline > 0.7:
-    rating = "A"
-    message = "A｜健康案"
-    status = "success"
-elif owner_net > 0:
-    rating = "B"
-    message = "B｜可做但需留意"
-    status = "warning"
-elif owner_net > -0.1 * baseline:
-    rating = "C"
-    message = "C｜邊緣案"
-    status = "warning"
-else:
-    rating = "D"
-    message = "D｜高風險或不成立"
-    status = "error"
+    # ===== 評級 =====
+    if owner_net > 0 and audited / baseline > 0.7:
+        rating = "A"
+        st.success("A｜健康案")
+    elif owner_net > 0:
+        rating = "B"
+        st.warning("B｜可做但需留意")
+    elif owner_net > -0.1 * baseline:
+        rating = "C"
+        st.warning("C｜邊緣案")
+    else:
+        rating = "D"
+        st.error("D｜高風險")
 
-# 👉 再顯示
-st.write(f"目前評級：**{rating}**")
-
-if status == "success":
-    st.success(message)
-elif status == "warning":
-    st.warning(message)
-else:
-    st.error(message)
-
-    st.subheader("📈 收益拆解")
-    a1, a2, a3 = st.columns(3)
-    a1.markdown(f"**套利收入（毛）**  \n{result['gross']['arbitrage']['gross_total_revenue']:,.0f}")
-    a1.markdown(f"**套利收入（審計後）**  \n{result['audited_arbitrage_revenue']:,.0f}")
-    
-    a2.markdown(f"**需量反應收入（DR）毛收入**  \n{result['gross']['dr']['gross_total_revenue']:,.0f}")
-    a2.markdown(f"**需量反應收入（審計後）**  \n{result['audited_dr_revenue']:,.0f}")
-    
-    a3.markdown(f"**輔助服務收入（SR）毛收入**  \n{result['gross']['sr']['gross_total_revenue']:,.0f}")
-    a3.markdown(f"**輔助服務收入（審計後）**  \n{result['audited_sr_revenue']:,.0f}")
-
-    st.subheader("💸 成本與扣費")
-
-    st.write(f"聚合商分潤：{result['deductions']['aggregator_share_fee']:,.0f}")
-    st.write(f"聚合商固定費：{result['deductions']['aggregator_fixed_fee']:,.0f}")
-    st.write(f"EMS 年費：{result['deductions']['ems_subscription_fee']:,.0f}")
-    st.write(f"保險費：{result['deductions']['insurance_cost']:,.0f}")
-    st.write(f"O&M 維運費：{result['deductions']['om_cost']:,.0f}")
-    st.write(f"保證金資金成本：{result['deductions']['deposit_cost']:,.0f}")
-    
-    st.write(f"👉 總成本：{result['deductions']['total_deductions']:,.0f}")
-
-    with st.expander("📘 計算邏輯說明（點開查看）"):
-        st.markdown("""
-    ### 🔹 套利收入
-    套利收入 = 可用電量 × 價差 × 每日循環次數 × 天數  
-    
-    ※ 本模型已考慮：
-    - SOC 可用範圍（非滿充滿放）
-    - 電池效率（RTE）
-    - 電池健康度（SOH）
-    
-    ---
-    
-    ### 🔹 輔助服務（SR）
-    SR收入 = 投標容量 × 價格 × 每日可用時數 × 天數  
-    
-    ※ 審計調整：
-    - 投標率（未滿下）
-    - 得標率
-    - 履約達成率
-    
-    ---
-    
-    ### 🔹 需量反應（DR）
-    DR收入 = 參與容量 × 執行時數 × 費率 × 執行率  
-    
-    ※ 審計調整：
-    - 事件觸發率
-    - 執行率
-    - 不保證每年發生
-    
-    ---
-    
-    ### 🔹 為什麼審計後會變低？
-    因為模型加入了現實條件：
-    - 聚合商不會滿容量投標
-    - 不同策略不能同時滿用
-    - 收入不保證發生
-    - 電池不能滿充滿放
-    
-    ---
-    
-    ### 🔹 業主淨收益
-    業主淨收益 = 審計後收入 - 所有費用  
-    
-    費用包含：
-    - 聚合商分潤
-    - 固定代操費
-    - EMS
-    - O&M
-    - 保險
-    - 保證金資金成本
-    """)
+    st.write(f"評級：**{rating}**")
 
     
