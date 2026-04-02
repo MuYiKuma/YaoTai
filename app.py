@@ -6,6 +6,9 @@ from strategy_rules import apply_strategy_constraints, generate_strategy_warning
 st.set_page_config(page_title="儲能案場審計工具", layout="wide")
 
 st.title("儲能案場審計工具")
+st.subheader("📂 上傳業務 Excel")
+
+uploaded_file = st.file_uploader("上傳 Excel 檔案", type=["xlsx"])
 
 # ===== 情境 =====
 scenario = st.selectbox("情境", ["樂觀情境", "基準情境", "保守情境"])
@@ -57,38 +60,49 @@ with col3:
 # ===== 按鈕 =====
 if st.button("跑審計", type="primary"):
 
-    # 👉 建立模型
-    x = StorageSiteInput(
-        power_kw=power_kw,
-        capacity_kwh=capacity_kwh,
-        dod=dod,
-        efficiency=efficiency,
-        soh=soh,
-        soc_window_ratio=soc_window_ratio,
+    # ===== 如果有上傳 Excel =====
+    if uploaded_file is not None:
+        try:
+            x = parse_excel_to_input(uploaded_file)
+            st.success("已成功解析 Excel")
 
-        summer_spread=summer_spread,
-        non_summer_spread=non_summer_spread,
-        summer_cycles_per_day=summer_cycles_per_day,
-        non_summer_cycles_per_day=non_summer_cycles_per_day,
+        except Exception as e:
+            st.error(f"Excel 解析失敗：{e}")
+            st.stop()
 
-        dr_capacity_kw=dr_capacity_kw,
-        dr_hours=dr_hours,
-        dr_rate=dr_rate,
-        dr_execution_rate=dr_execution_rate,
+    else:
+        # ===== 沒有 Excel → 用手動輸入 =====
+        x = StorageSiteInput(
+            power_kw=power_kw,
+            capacity_kwh=capacity_kwh,
+            dod=dod,
+            efficiency=efficiency,
+            soh=soh,
+            soc_window_ratio=soc_window_ratio,
 
-        sr_capacity_kw=sr_capacity_kw,
-        sr_price=sr_price,
-        sr_hours_per_day=sr_hours_per_day,
-        sr_execution_rate=sr_execution_rate,
+            summer_spread=summer_spread,
+            non_summer_spread=non_summer_spread,
+            summer_cycles_per_day=summer_cycles_per_day,
+            non_summer_cycles_per_day=non_summer_cycles_per_day,
 
-        aggregator_share_ratio=aggregator_share_ratio,
-        aggregator_fixed_fee=aggregator_fixed_fee,
-        ems_subscription_fee=ems_subscription_fee,
-        insurance_cost=insurance_cost,
-        om_cost=om_cost,
-        deposit_amount=deposit_amount,
-        deposit_cost_rate=deposit_cost_rate,
-    )
+            dr_capacity_kw=dr_capacity_kw,
+            dr_hours=dr_hours,
+            dr_rate=dr_rate,
+            dr_execution_rate=dr_execution_rate,
+
+            sr_capacity_kw=sr_capacity_kw,
+            sr_price=sr_price,
+            sr_hours_per_day=sr_hours_per_day,
+            sr_execution_rate=sr_execution_rate,
+
+            aggregator_share_ratio=aggregator_share_ratio,
+            aggregator_fixed_fee=aggregator_fixed_fee,
+            ems_subscription_fee=ems_subscription_fee,
+            insurance_cost=insurance_cost,
+            om_cost=om_cost,
+            deposit_amount=deposit_amount,
+            deposit_cost_rate=deposit_cost_rate,
+        )
 
     # 👉 套情境
     x = apply_scenario(x, scenario_en)
@@ -103,6 +117,8 @@ if st.button("跑審計", type="primary"):
     baseline = result["baseline_revenue"]
     audited = result["audited_total_revenue"]
     owner_net = result["owner_net_revenue"]
+    st.subheader("📋 Excel解析結果（檢查用）")
+    st.json(x.__dict__)
 
     # ===== UI =====
     st.subheader("📊 審計結果")
