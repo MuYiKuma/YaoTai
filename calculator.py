@@ -1,184 +1,193 @@
 from __future__ import annotations
 
-from typing import Any
-
 from storage_site_input import StorageSiteInput
+
+SUMMER_DAYS = 107
+NON_SUMMER_DAYS = 141
+ROUND_TRIP_ADJUSTMENT = 0.927
 
 
 def calculate_available_energy(input_data: StorageSiteInput) -> float:
-    """Calculate usable discharge energy in kWh."""
+    """Calculate the usable energy of a storage site in kWh.
+
+    This function now also respects ``soc_window_ratio`` so the value can be
+    used by both the original business calculator and the audit layer.
+    """
     return (
         input_data.capacity_kwh
         * input_data.dod
         * input_data.soh
-        * input_data.round_trip_efficiency
+        * input_data.efficiency
+        * input_data.soc_window_ratio
     )
 
 
-def calculate_arbitrage_revenue_breakdown(
-    input_data: StorageSiteInput,
-) -> dict[str, float]:
-    """Calculate annual arbitrage revenue with seasonal breakdown."""
-    available_energy_kwh = calculate_available_energy(input_data)
-
-    summer_revenue = (
-        available_energy_kwh
-        * input_data.summer_spread_per_kwh
+def calculate_gross_arbitrage_revenue(input_data: StorageSiteInput) -> float:
+    """Calculate annual *gross* arbitrage revenue for a storage site."""
+    available_energy: float = calculate_available_energy(input_data)
+    summer_revenue: float = (
+        available_energy
+        * input_data.summer_spread
         * input_data.summer_cycles_per_day
-        * input_data.summer_days_per_year
+        * SUMMER_DAYS
     )
-    non_summer_revenue = (
-        available_energy_kwh
-        * input_data.non_summer_spread_per_kwh
+    non_summer_revenue: float = (
+        available_energy
+        * input_data.non_summer_spread
         * input_data.non_summer_cycles_per_day
-        * input_data.non_summer_days_per_year
+        * NON_SUMMER_DAYS
     )
-    total_revenue = summer_revenue + non_summer_revenue
+
+    return (summer_revenue + non_summer_revenue) * ROUND_TRIP_ADJUSTMENT
+
+
+def calculate_gross_arbitrage_revenue_breakdown(input_data: StorageSiteInput) -> dict:
+    """Calculate annual *gross* arbitrage revenue and provide a seasonal breakdown."""
+    available_energy: float = calculate_available_energy(input_data)
+    summer_revenue: float = (
+        available_energy
+        * input_data.summer_spread
+        * input_data.summer_cycles_per_day
+        * SUMMER_DAYS
+        * ROUND_TRIP_ADJUSTMENT
+    )
+    non_summer_revenue: float = (
+        available_energy
+        * input_data.non_summer_spread
+        * input_data.non_summer_cycles_per_day
+        * NON_SUMMER_DAYS
+        * ROUND_TRIP_ADJUSTMENT
+    )
+    gross_total_revenue: float = summer_revenue + non_summer_revenue
 
     return {
-        "available_energy_kwh": available_energy_kwh,
+        "available_energy": available_energy,
         "summer_revenue": summer_revenue,
         "non_summer_revenue": non_summer_revenue,
-        "total_revenue": total_revenue,
+        "gross_total_revenue": gross_total_revenue,
+        # backward compatibility
+        "total_revenue": gross_total_revenue,
     }
 
 
-def calculate_arbitrage_revenue(input_data: StorageSiteInput) -> float:
-    """Calculate total annual arbitrage revenue."""
-    return calculate_arbitrage_revenue_breakdown(input_data)["total_revenue"]
+def calculate_gross_dr_revenue_breakdown(input_data: StorageSiteInput) -> dict:
+    """Calculate simplified *gross* DR revenue.
 
-
-def calculate_dr_revenue_breakdown(
-    input_data: StorageSiteInput,
-) -> dict[str, float]:
-    """Calculate annual DR revenue using simplified event-based model."""
-    if not input_data.dr_enabled:
-        return {
-            "committed_capacity_kw": 0.0,
-            "event_hours": 0.0,
-            "events_per_year": 0.0,
-            "gross_revenue": 0.0,
-            "discount_amount": 0.0,
-            "total_revenue": 0.0,
-        }
-
-    gross_revenue = (
-        input_data.dr_committed_capacity_kw
-        * input_data.dr_events_per_year
-        * input_data.dr_price_per_kw_event
+    This remains a simplified proxy until DR is split by official program type.
+    """
+    gross_total_revenue = (
+        input_data.dr_capacity_kw
+        * input_data.dr_hours
+        * input_data.dr_rate
+        * input_data.dr_execution_rate
+        * input_data.dr_discount_ratio
     )
-    discount_amount = gross_revenue * input_data.dr_discount_ratio
-    total_revenue = gross_revenue - discount_amount
-
     return {
-        "committed_capacity_kw": input_data.dr_committed_capacity_kw,
-        "event_hours": input_data.dr_event_hours,
-        "events_per_year": input_data.dr_events_per_year,
-        "gross_revenue": gross_revenue,
-        "discount_amount": discount_amount,
-        "total_revenue": total_revenue,
+        "committed_capacity_kw": input_data.dr_capacity_kw,
+        "event_hours": input_data.dr_hours,
+        "gross_total_revenue": gross_total_revenue,
+        # backward compatibility
+        "total_revenue": gross_total_revenue,
     }
 
 
-def calculate_dr_revenue(input_data: StorageSiteInput) -> float:
-    """Calculate total annual DR revenue."""
-    return calculate_dr_revenue_breakdown(input_data)["total_revenue"]
+def calculate_gross_sr_revenue_breakdown(input_data: StorageSiteInput) -> dict:
+    """Calculate simplified *gross* SR revenue.
 
-
-def calculate_sr_revenue_breakdown(
-    input_data: StorageSiteInput,
-) -> dict[str, float]:
-    """Calculate annual spinning reserve revenue."""
-    if not input_data.sr_enabled:
-        return {
-            "bid_capacity_kw": 0.0,
-            "combined_fee_per_mwh": 0.0,
-            "daily_gross_revenue": 0.0,
-            "annual_gross_revenue": 0.0,
-            "service_fee": 0.0,
-            "total_revenue": 0.0,
-        }
-
-    combined_fee_per_mwh = (
-        input_data.sr_capacity_fee_per_mwh + input_data.sr_performance_fee_per_mwh
+    Note: this is still a business-side proxy, not a full market settlement
+    formula.
+    """
+    gross_total_revenue = (
+        input_data.sr_capacity_kw
+        * input_data.sr_price
+        * input_data.sr_hours_per_day
+        * input_data.sr_execution_rate
     )
-    daily_gross_revenue = (
-        input_data.sr_bid_capacity_kw
-        * input_data.sr_standby_hours_per_day
-        * combined_fee_per_mwh
-        / 1000
-        * input_data.sr_adjustment_factor
-    )
-
-    annual_gross_revenue = daily_gross_revenue * input_data.sr_days_per_year
-    service_fee = annual_gross_revenue * input_data.sr_service_fee_ratio
-    total_revenue = annual_gross_revenue - service_fee
-
     return {
-        "bid_capacity_kw": input_data.sr_bid_capacity_kw,
-        "combined_fee_per_mwh": combined_fee_per_mwh,
-        "daily_gross_revenue": daily_gross_revenue,
-        "annual_gross_revenue": annual_gross_revenue,
-        "service_fee": service_fee,
-        "total_revenue": total_revenue,
+        "bid_capacity_kw": input_data.sr_capacity_kw,
+        "hours_per_day": input_data.sr_hours_per_day,
+        "gross_total_revenue": gross_total_revenue,
+        # backward compatibility
+        "total_revenue": gross_total_revenue,
     }
 
 
-def calculate_sr_revenue(input_data: StorageSiteInput) -> float:
-    """Calculate total annual spinning reserve revenue."""
-    return calculate_sr_revenue_breakdown(input_data)["total_revenue"]
-
-
-def calculate_total_revenue_breakdown(
-    input_data: StorageSiteInput,
-) -> dict[str, Any]:
-    """Calculate all revenue streams and return a unified breakdown."""
-    arbitrage = calculate_arbitrage_revenue_breakdown(input_data)
-    dr = calculate_dr_revenue_breakdown(input_data)
-    sr = calculate_sr_revenue_breakdown(input_data)
-
-    total_revenue = (
-        arbitrage["total_revenue"] + dr["total_revenue"] + sr["total_revenue"]
+def calculate_gross_total_revenue_breakdown(input_data: StorageSiteInput) -> dict:
+    """Aggregate all simplified *gross* revenue components."""
+    arbitrage = calculate_gross_arbitrage_revenue_breakdown(input_data)
+    dr = calculate_gross_dr_revenue_breakdown(input_data)
+    sr = calculate_gross_sr_revenue_breakdown(input_data)
+    gross_total_revenue = (
+        arbitrage["gross_total_revenue"]
+        + dr["gross_total_revenue"]
+        + sr["gross_total_revenue"]
     )
-
     return {
         "arbitrage": arbitrage,
         "dr": dr,
         "sr": sr,
-        "total_revenue": total_revenue,
+        "gross_total_revenue": gross_total_revenue,
+        # backward compatibility
+        "total_revenue": gross_total_revenue,
     }
 
 
-def calculate_total_revenue(input_data: StorageSiteInput) -> float:
-    """Calculate total annual revenue across all enabled revenue streams."""
-    return calculate_total_revenue_breakdown(input_data)["total_revenue"]
-
-
-def detect_arbitrage_risk(input_data: StorageSiteInput) -> dict[str, Any]:
-    """Assess arbitrage assumptions and classify risk level."""
-    breakdown = calculate_arbitrage_revenue_breakdown(input_data)
+def detect_arbitrage_risk(input_data: StorageSiteInput) -> dict:
+    """Assess arbitrage assumptions and classify the storage site's risk level."""
+    breakdown: dict = calculate_gross_arbitrage_revenue_breakdown(input_data)
     reasons: list[str] = []
-    risk_level = "low"
+    risk_level: str = "low"
 
     if breakdown["non_summer_revenue"] > breakdown["summer_revenue"]:
-        reasons.append("非夏月套利收入高於夏月套利收入，表示收益結構較依賴非夏月情境。")
+        reasons.append(
+            "非夏月套利收入高於夏月套利收入，代表收益結構偏向較不穩定的非夏月情境。"
+        )
         risk_level = "high"
 
     if input_data.non_summer_cycles_per_day > 1.5:
-        reasons.append("非夏月每日循環次數高於 1.5 次，代表使用頻率假設偏高。")
+        reasons.append(
+            "非夏月每日循環次數高於 1.5 次，表示模型假設使用頻率偏高，執行風險較大。"
+        )
         risk_level = "high"
 
-    spread = max(input_data.summer_spread_per_kwh, input_data.non_summer_spread_per_kwh)
+    spread: float = max(input_data.summer_spread, input_data.non_summer_spread)
     if spread > 3:
-        reasons.append("價差假設大於 3 元/度，對價差條件依賴較高。")
+        reasons.append(
+            "價差假設大於 3 元/度，對市場價差的依賴較高，需留意中度風險。"
+        )
         if risk_level != "high":
             risk_level = "medium"
 
-    if input_data.round_trip_efficiency < 0.7 or input_data.round_trip_efficiency > 1.0:
-        reasons.append("round-trip efficiency 未落在合理區間（0.7 至 1.0）。")
+    if input_data.efficiency < 0.9 or input_data.efficiency > 1:
+        reasons.append(
+            "效率參數未落在合理區間（0.9 至 1），代表效率假設可能未妥善考慮，屬高風險。"
+        )
         risk_level = "high"
 
+    if input_data.soc_window_ratio < 0.8:
+        reasons.append(
+            "SOC usable window 低於 0.8，代表模型可用電量假設偏保守，需確認是否重複扣減。"
+        )
+        if risk_level == "low":
+            risk_level = "medium"
+
     if not reasons:
-        reasons.append("目前套利假設未見明顯異常。")
+        reasons.append(
+            "目前套利假設落在合理區間內，夏月收益占比與循環、效率假設皆未見明顯風險。"
+        )
 
     return {"risk_level": risk_level, "reasons": reasons}
+
+
+# Backward-compatible wrappers -------------------------------------------------
+
+def calculate_arbitrage_revenue(input_data: StorageSiteInput) -> float:
+    return calculate_gross_arbitrage_revenue(input_data)
+
+
+def calculate_arbitrage_revenue_breakdown(input_data: StorageSiteInput) -> dict:
+    return calculate_gross_arbitrage_revenue_breakdown(input_data)
+
+
+def calculate_total_revenue_breakdown(input_data: StorageSiteInput) -> dict:
+    return calculate_gross_total_revenue_breakdown(input_data)
