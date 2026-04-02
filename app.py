@@ -98,8 +98,10 @@ if st.button("跑審計", type="primary"):
     st.divider()
     st.subheader("📊 審計結果")
 
+    # 👉 一定要先建立 columns
     c1, c2, c3 = st.columns(3)
-
+    
+    # 👉 再用
     c1.metric("業務試算收入（未調整）", f"{baseline:,.0f}")
     c2.metric("審計後可實現收入", f"{audited:,.0f}")
     c3.metric("業主實際淨收益", f"{owner_net:,.0f}")
