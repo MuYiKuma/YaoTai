@@ -86,39 +86,103 @@ if st.button("跑審計", type="primary"):
     audited = result["audited_total_revenue"]
     owner_net = result["owner_net_revenue"]
 
+    
+
     st.divider()
-    st.subheader("審計結果")
+    st.subheader("📊 審計結果")
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("業務版收入", f"{baseline:,.0f}")
-    c2.metric("審計後收入", f"{audited:,.0f}")
-    c3.metric("業主淨收入", f"{owner_net:,.0f}")
 
-    if owner_net > 0 and audited / baseline > 0.7:
-        rating = "A"
-        st.success("評級：A｜健康案")
-    elif owner_net > 0:
-        rating = "B"
-        st.warning("評級：B｜可做但需留意")
-    elif owner_net > -0.1 * baseline:
-        rating = "C"
-        st.warning("評級：C｜邊緣案")
-    else:
-        rating = "D"
-        st.error("評級：D｜高風險或不成立")
+    c1.metric("業務試算收入（未調整）", f"{baseline:,.0f}")
+    c2.metric("審計後可實現收入", f"{audited:,.0f}")
+    c3.metric("業主實際淨收益", f"{owner_net:,.0f}")
 
-    st.write(f"目前評級：**{rating}**")
+    st.subheader("⚠️ 風險提示")
 
-    st.subheader("分項結果")
+    if owner_net < 0:
+        st.error("此案在審計假設下為虧損，需重新檢討商務條件")
+    
+    if result["audited_total_revenue"] < result["baseline_revenue"] * 0.5:
+        st.warning("收入大幅折減，可能存在過度樂觀假設")
+    
+    if result["deductions"]["aggregator_fixed_fee"] > result["audited_total_revenue"]:
+        st.warning("固定費用過高，已超過主要收入來源")
+    
+        st.write(f"目前評級：**{rating}**")
+
+    st.subheader("📈 收益拆解")
     a1, a2, a3 = st.columns(3)
-    a1.markdown(f"**套利毛收入**  \n{result['gross']['arbitrage']['gross_total_revenue']:,.0f}")
-    a1.markdown(f"**套利審計後**  \n{result['audited_arbitrage_revenue']:,.0f}")
+    a1.markdown(f"**套利收入（毛）**  \n{result['gross']['arbitrage']['gross_total_revenue']:,.0f}")
+    a1.markdown(f"**套利收入（審計後）**  \n{result['audited_arbitrage_revenue']:,.0f}")
+    
+    a2.markdown(f"**需量反應收入（DR）毛收入**  \n{result['gross']['dr']['gross_total_revenue']:,.0f}")
+    a2.markdown(f"**需量反應收入（審計後）**  \n{result['audited_dr_revenue']:,.0f}")
+    
+    a3.markdown(f"**輔助服務收入（SR）毛收入**  \n{result['gross']['sr']['gross_total_revenue']:,.0f}")
+    a3.markdown(f"**輔助服務收入（審計後）**  \n{result['audited_sr_revenue']:,.0f}")
 
-    a2.markdown(f"**DR 毛收入**  \n{result['gross']['dr']['gross_total_revenue']:,.0f}")
-    a2.markdown(f"**DR 審計後**  \n{result['audited_dr_revenue']:,.0f}")
+    st.subheader("💸 成本與扣費")
 
-    a3.markdown(f"**SR 毛收入**  \n{result['gross']['sr']['gross_total_revenue']:,.0f}")
-    a3.markdown(f"**SR 審計後**  \n{result['audited_sr_revenue']:,.0f}")
+    st.write(f"聚合商分潤：{result['deductions']['aggregator_share_fee']:,.0f}")
+    st.write(f"聚合商固定費：{result['deductions']['aggregator_fixed_fee']:,.0f}")
+    st.write(f"EMS 年費：{result['deductions']['ems_subscription_fee']:,.0f}")
+    st.write(f"保險費：{result['deductions']['insurance_cost']:,.0f}")
+    st.write(f"O&M 維運費：{result['deductions']['om_cost']:,.0f}")
+    st.write(f"保證金資金成本：{result['deductions']['deposit_cost']:,.0f}")
+    
+    st.write(f"👉 總成本：{result['deductions']['total_deductions']:,.0f}")
 
-    st.subheader("扣費明細")
-    st.json(result["deductions"])
+    with st.expander("📘 計算邏輯說明（點開查看）"):
+        st.markdown("""
+    ### 🔹 套利收入
+    套利收入 = 可用電量 × 價差 × 每日循環次數 × 天數  
+    
+    ※ 本模型已考慮：
+    - SOC 可用範圍（非滿充滿放）
+    - 電池效率（RTE）
+    - 電池健康度（SOH）
+    
+    ---
+    
+    ### 🔹 輔助服務（SR）
+    SR收入 = 投標容量 × 價格 × 每日可用時數 × 天數  
+    
+    ※ 審計調整：
+    - 投標率（未滿下）
+    - 得標率
+    - 履約達成率
+    
+    ---
+    
+    ### 🔹 需量反應（DR）
+    DR收入 = 參與容量 × 執行時數 × 費率 × 執行率  
+    
+    ※ 審計調整：
+    - 事件觸發率
+    - 執行率
+    - 不保證每年發生
+    
+    ---
+    
+    ### 🔹 為什麼審計後會變低？
+    因為模型加入了現實條件：
+    - 聚合商不會滿容量投標
+    - 不同策略不能同時滿用
+    - 收入不保證發生
+    - 電池不能滿充滿放
+    
+    ---
+    
+    ### 🔹 業主淨收益
+    業主淨收益 = 審計後收入 - 所有費用  
+    
+    費用包含：
+    - 聚合商分潤
+    - 固定代操費
+    - EMS
+    - O&M
+    - 保險
+    - 保證金資金成本
+    """)
+
+    
