@@ -1,6 +1,13 @@
 import streamlit as st
 from storage_site_input import StorageSiteInput
 from audit_layer import calculate_audited_revenue_breakdown, apply_scenario
+from strategy_rules import apply_strategy_constraints, generate_strategy_warnings
+
+# 👉 套用策略限制
+x, strategy_notes = apply_strategy_constraints(x)
+
+# 👉 產生警示
+strategy_warnings = generate_strategy_warnings(x)
 
 st.set_page_config(page_title="儲能案場審計工具", layout="wide")
 
@@ -98,6 +105,15 @@ if st.button("跑審計", type="primary"):
     c3.metric("業主實際淨收益", f"{owner_net:,.0f}")
 
     st.subheader("⚠️ 風險提示")
+    st.subheader("⚠️ 策略調整與限制")
+
+        for note in strategy_notes:
+            st.info(note)
+        
+        st.subheader("🚨 風險警示")
+        
+        for w in strategy_warnings:
+            st.warning(w)
 
     # 👉 先算 rating
 if owner_net > 0 and audited / baseline > 0.7:
