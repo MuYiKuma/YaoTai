@@ -2,7 +2,7 @@ import streamlit as st
 from storage_site_input import StorageSiteInput
 from audit_layer import calculate_audited_revenue_breakdown, apply_scenario
 from strategy_rules import apply_strategy_constraints, generate_strategy_warnings
-
+from excel_parser import parse_excel_to_input
 st.set_page_config(page_title="儲能案場審計工具", layout="wide")
 
 st.title("儲能案場審計工具")
