@@ -1,7 +1,5 @@
 from __future__ import annotations
-
 from dataclasses import replace
-
 from storage_site_input import StorageSiteInput
 from calculator import calculate_gross_total_revenue_breakdown
 
