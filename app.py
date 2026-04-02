@@ -1,6 +1,6 @@
 import streamlit as st
 from storage_site_input import StorageSiteInput
-from audit_layer import calculate_audited_revenue_breakdown, apply_scenario
+from audit_layer import calculate_audited_revenue_breakdown
 
 st.title("儲能案場審計工具")
 
