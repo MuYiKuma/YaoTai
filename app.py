@@ -99,16 +99,33 @@ if st.button("跑審計", type="primary"):
 
     st.subheader("⚠️ 風險提示")
 
-    if owner_net < 0:
-        st.error("此案在審計假設下為虧損，需重新檢討商務條件")
-    
-    if result["audited_total_revenue"] < result["baseline_revenue"] * 0.5:
-        st.warning("收入大幅折減，可能存在過度樂觀假設")
-    
-    if result["deductions"]["aggregator_fixed_fee"] > result["audited_total_revenue"]:
-        st.warning("固定費用過高，已超過主要收入來源")
-    
-        st.write(f"目前評級：**{rating}**")
+    # 👉 先算 rating
+if owner_net > 0 and audited / baseline > 0.7:
+    rating = "A"
+    message = "A｜健康案"
+    status = "success"
+elif owner_net > 0:
+    rating = "B"
+    message = "B｜可做但需留意"
+    status = "warning"
+elif owner_net > -0.1 * baseline:
+    rating = "C"
+    message = "C｜邊緣案"
+    status = "warning"
+else:
+    rating = "D"
+    message = "D｜高風險或不成立"
+    status = "error"
+
+# 👉 再顯示
+st.write(f"目前評級：**{rating}**")
+
+if status == "success":
+    st.success(message)
+elif status == "warning":
+    st.warning(message)
+else:
+    st.error(message)
 
     st.subheader("📈 收益拆解")
     a1, a2, a3 = st.columns(3)
