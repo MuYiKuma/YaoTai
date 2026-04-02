@@ -111,14 +111,14 @@ if st.button("跑審計", type="primary"):
 
     st.subheader("分項結果")
     a1, a2, a3 = st.columns(3)
-    a1.write("套利毛收入", f'{result["gross"]["arbitrage"]["gross_total_revenue"]:,.0f}')
-    a1.write("套利審計後", f'{result["audited_arbitrage_revenue"]:,.0f}')
+    a1.markdown(f"**套利毛收入**  \n{result['gross']['arbitrage']['gross_total_revenue']:,.0f}")
+    a1.markdown(f"**套利審計後**  \n{result['audited_arbitrage_revenue']:,.0f}")
 
-    a2.write("DR 毛收入", f'{result["gross"]["dr"]["gross_total_revenue"]:,.0f}')
-    a2.write("DR 審計後", f'{result["audited_dr_revenue"]:,.0f}')
+    a2.markdown(f"**DR 毛收入**  \n{result['gross']['dr']['gross_total_revenue']:,.0f}")
+    a2.markdown(f"**DR 審計後**  \n{result['audited_dr_revenue']:,.0f}")
 
-    a3.write("SR 毛收入", f'{result["gross"]["sr"]["gross_total_revenue"]:,.0f}')
-    a3.write("SR 審計後", f'{result["audited_sr_revenue"]:,.0f}')
+    a3.markdown(f"**SR 毛收入**  \n{result['gross']['sr']['gross_total_revenue']:,.0f}")
+    a3.markdown(f"**SR 審計後**  \n{result['audited_sr_revenue']:,.0f}")
 
     st.subheader("扣費明細")
     st.json(result["deductions"])
