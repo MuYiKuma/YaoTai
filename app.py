@@ -21,6 +21,7 @@ power_kw = st.number_input("PCS 功率 (kW)", value=500.0)
 capacity_kwh = st.number_input("電池容量 (kWh)", value=1044.0)
 
 if st.button("跑審計"):
+
     # 先建立模型物件
     x = StorageSiteInput(
         power_kw=power_kw,
@@ -50,37 +51,19 @@ if st.button("跑審計"):
         deposit_cost_rate=deposit_cost_rate,
     )
 
-if uploaded_file is not None:
-    try:
+    # 如果有 CSV 就轉換
+    if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
 
-        st.write("CSV 欄位：", list(df.columns))
-        st.dataframe(df.head())
+        # 轉成模型需要欄位
+        df["date"] = pd.to_datetime(df["Time"], errors="coerce")
+        df["month"] = df["date"].dt.month
+        df["load_kwh"] = df["Power(kW)"] * 0.25
 
-        # ===== 依你現在的 RawData 格式做標準化 =====
-        # 原始欄位：
-        # Time, Power(kW)
+        x.annual_load_profile = df  # ✅ 這時候 x 已存在
 
-        if "Time" in df.columns and "Power(kW)" in df.columns:
-            df["date"] = pd.to_datetime(df["Time"], errors="coerce")
-            df["month"] = df["date"].dt.month
-
-            # 15 分鐘功率(kW) → 當筆電量(kWh)
-            df["load_kwh"] = df["Power(kW)"] * 0.25
-
-        # 檢查必要欄位
-        required_cols = {"month", "load_kwh"}
-        missing = required_cols - set(df.columns)
-        if missing:
-            st.error(f"CSV 缺少必要欄位：{missing}")
-            st.stop()
-
-        x.annual_load_profile = df
-        st.success("已成功讀取全年負載資料")
-
-        st.subheader("標準化後資料")
-        st.dataframe(df[["date", "month", "Power(kW)", "load_kwh"]].head())
-
-    except Exception as e:
-        st.error(f"CSV 解析失敗: {e}")
-        st.stop()
+    # 套用情境、策略、計算審計
+    x = apply_scenario(x, scenario_en)
+    x, strategy_notes = apply_strategy_constraints(x)
+    strategy_warnings = generate_strategy_warnings(x)
+    result = calculate_audited_revenue_breakdown(x)
