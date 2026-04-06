@@ -1,58 +1,57 @@
+# app.py
 import streamlit as st
 import pandas as pd
 from storage_site_input import StorageSiteInput
 from audit_layer import calculate_audited_revenue_breakdown, apply_scenario
 from strategy_rules import apply_strategy_constraints, generate_strategy_warnings
 
+# ⚠️ 一定要放在最上面
 st.set_page_config(page_title="儲能案場審計工具", layout="wide")
 st.title("儲能案場審計工具")
 
+# ===== 情境選擇 =====
 scenario = st.selectbox("選擇情境", ["樂觀情境", "基準情境", "保守情境"])
-scenario_map = {
-    "樂觀情境": "optimistic",
-    "基準情境": "base",
-    "保守情境": "conservative"
-}
+scenario_map = {"樂觀情境":"optimistic", "基準情境":"base", "保守情境":"conservative"}
 scenario_en = scenario_map[scenario]
 
-uploaded_file = st.file_uploader("上傳全年負載 CSV", type=["csv"])
+# ===== CSV 上傳 =====
+uploaded_file = st.file_uploader("上傳全年負載 CSV（選填）", type=["csv"])
 
-power_kw = st.number_input("PCS 功率 (kW)", value=500.0)
-capacity_kwh = st.number_input("電池容量 (kWh)", value=1044.0)
-# ===== 先定義所有輸入 =====
+# ===== 手動輸入欄位 =====
 power_kw = st.number_input("PCS 功率 (kW)", value=500.0)
 capacity_kwh = st.number_input("電池容量 (kWh)", value=1044.0)
 dod = st.number_input("DoD", value=0.9)
 efficiency = st.number_input("效率", value=0.86)
 soh = st.number_input("SOH", value=1.0)
-soc_window_ratio = st.number_input("SOC window", value=0.85)
+soc_window_ratio = st.number_input("SOC 可用範圍", value=0.85)
 
 summer_spread = st.number_input("夏季價差", value=2.5)
 non_summer_spread = st.number_input("非夏季價差", value=1.8)
+summer_cycles_per_day = st.number_input("夏季每日循環次數", value=1.0)
+non_summer_cycles_per_day = st.number_input("非夏季每日循環次數", value=0.8)
 
-summer_cycles_per_day = st.number_input("夏季 cycles/day", value=1.0)
-non_summer_cycles_per_day = st.number_input("非夏季 cycles/day", value=0.8)
-
-dr_capacity_kw = st.number_input("DR 容量", value=250.0)
+dr_capacity_kw = st.number_input("DR 容量 (kW)", value=250.0)
 dr_hours = st.number_input("DR 時數", value=4.0)
 dr_rate = st.number_input("DR 費率", value=1.84)
 dr_execution_rate = st.number_input("DR 執行率", value=0.9)
 
-sr_capacity_kw = st.number_input("SR 容量", value=350.0)
+sr_capacity_kw = st.number_input("SR 容量 (kW)", value=350.0)
 sr_price = st.number_input("SR 價格", value=400.0)
 sr_hours_per_day = st.number_input("SR 每日時數", value=2.0)
 sr_execution_rate = st.number_input("SR 執行率", value=0.9)
 
-aggregator_share_ratio = st.number_input("分潤比例", value=0.2)
-aggregator_fixed_fee = st.number_input("固定費", value=400000.0)
+aggregator_share_ratio = st.number_input("聚合商分潤 (%)", value=0.2)
+aggregator_fixed_fee = st.number_input("固定費 (/MW/年)", value=400000.0)
 ems_subscription_fee = st.number_input("EMS 年費", value=70992.0)
 insurance_cost = st.number_input("保險費", value=120060.0)
-om_cost = st.number_input("維運費", value=204102.0)
+om_cost = st.number_input("O&M 維運費", value=204102.0)
 deposit_amount = st.number_input("保證金", value=153300.0)
-deposit_cost_rate = st.number_input("保證金成本率", value=0.05)
+deposit_cost_rate = st.number_input("保證金資金成本率", value=0.05)
+
+# ===== 按鈕 =====
 if st.button("跑審計"):
 
-    # 先建立模型物件
+    # ===== 建立模型 =====
     x = StorageSiteInput(
         power_kw=power_kw,
         capacity_kwh=capacity_kwh,
@@ -81,19 +80,64 @@ if st.button("跑審計"):
         deposit_cost_rate=deposit_cost_rate,
     )
 
-    # 如果有 CSV 就轉換
+    # ===== CSV 上傳標準化 =====
     if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
 
-        # 轉成模型需要欄位
-        df["date"] = pd.to_datetime(df["Time"], errors="coerce")
-        df["month"] = df["date"].dt.month
-        df["load_kwh"] = df["Power(kW)"] * 0.25
+        # 將 CSV 標準化為 load_kwh / month
+        if "Time" in df.columns and "Power(kW)" in df.columns:
+            df["date"] = pd.to_datetime(df["Time"], errors="coerce")
+            df["month"] = df["date"].dt.month
+            df["load_kwh"] = df["Power(kW)"] * 0.25
 
-        x.annual_load_profile = df  # ✅ 這時候 x 已存在
+        required_cols = {"month","load_kwh"}
+        missing = required_cols - set(df.columns)
+        if missing:
+            st.error(f"CSV 缺少必要欄位：{missing}")
+            st.stop()
 
-    # 套用情境、策略、計算審計
+        x.annual_load_profile = df
+        st.success("已成功讀取全年負載資料")
+        st.subheader("標準化後資料")
+        st.dataframe(df[["date","month","Power(kW)","load_kwh"]].head())
+
+    # ===== 套用情境 & 策略 =====
     x = apply_scenario(x, scenario_en)
     x, strategy_notes = apply_strategy_constraints(x)
     strategy_warnings = generate_strategy_warnings(x)
+
+    # ===== 計算審計 =====
     result = calculate_audited_revenue_breakdown(x)
+    baseline = result["baseline_revenue"]
+    audited = result["audited_total_revenue"]
+    owner_net = result["owner_net_revenue"]
+
+    # ===== 顯示結果 =====
+    c1, c2, c3 = st.columns(3)
+    c1.metric("業務收入", f"{baseline:,.0f}")
+    c2.metric("審計收入", f"{audited:,.0f}")
+    c3.metric("淨收益", f"{owner_net:,.0f}")
+
+    st.subheader("⚠️ 策略調整")
+    for note in strategy_notes:
+        st.info(note)
+
+    st.subheader("🚨 風險警示")
+    for w in strategy_warnings:
+        st.warning(w)
+
+    # ===== 評級 =====
+    if owner_net > 0 and audited / baseline > 0.7:
+        rating = "A"
+        st.success("A｜健康案")
+    elif owner_net > 0:
+        rating = "B"
+        st.warning("B｜可做但需留意")
+    elif owner_net > -0.1*baseline:
+        rating = "C"
+        st.warning("C｜邊緣案")
+    else:
+        rating = "D"
+        st.error("D｜高風險")
+
+    st.write(f"評級：**{rating}**")
