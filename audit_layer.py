@@ -1,6 +1,7 @@
-# audit_layer.py
 from dataclasses import replace
 from storage_site_input import StorageSiteInput
+from calculator import calculate_gross_total_revenue_breakdown
+
 
 SCENARIO_PRESETS = {
     "optimistic": {
@@ -32,10 +33,113 @@ SCENARIO_PRESETS = {
     },
 }
 
+
+def apply_bid_adjustment(amount: float, ratio: float) -> float:
+    return amount * ratio
+
+
+def apply_allocation_adjustment(amount: float, ratio: float) -> float:
+    return amount * ratio
+
+
+def apply_realization_adjustment(amount: float, ratio: float) -> float:
+    return amount * ratio
+
+
 def apply_scenario(input_data: StorageSiteInput, scenario: str) -> StorageSiteInput:
     if scenario not in SCENARIO_PRESETS:
         raise ValueError(f"未知情境 {scenario}")
     return replace(input_data, **SCENARIO_PRESETS[scenario])
 
-# 其他 calculate_audited_revenue_breakdown 函式保留你原本版本
-# 會使用 calculate_gross_total_revenue_breakdown + 費用扣除 + owner_net
+
+def calculate_deposit_cost(input_data: StorageSiteInput) -> float:
+    return input_data.deposit_amount * input_data.deposit_cost_rate
+
+
+def calculate_effective_aggregator_fixed_fee(input_data: StorageSiteInput) -> float:
+    return input_data.aggregator_fixed_fee * (input_data.power_kw / 1000.0)
+
+
+def calculate_owner_fee_deductions(
+    total_realized_revenue: float,
+    input_data: StorageSiteInput,
+) -> dict:
+    aggregator_share_fee = total_realized_revenue * input_data.aggregator_share_ratio
+    aggregator_fixed_fee = calculate_effective_aggregator_fixed_fee(input_data)
+    deposit_cost = calculate_deposit_cost(input_data)
+
+    total_deductions = (
+        aggregator_share_fee
+        + aggregator_fixed_fee
+        + input_data.ems_subscription_fee
+        + input_data.insurance_cost
+        + input_data.om_cost
+        + deposit_cost
+    )
+
+    return {
+        "aggregator_share_fee": aggregator_share_fee,
+        "aggregator_fixed_fee": aggregator_fixed_fee,
+        "ems_subscription_fee": input_data.ems_subscription_fee,
+        "insurance_cost": input_data.insurance_cost,
+        "om_cost": input_data.om_cost,
+        "deposit_cost": deposit_cost,
+        "total_deductions": total_deductions,
+    }
+
+
+def calculate_audited_revenue_breakdown(input_data: StorageSiteInput) -> dict:
+    gross = calculate_gross_total_revenue_breakdown(input_data)
+
+    gross_arb = gross["arbitrage"]["gross_total_revenue"]
+    gross_dr = gross["dr"]["gross_total_revenue"]
+    gross_sr = gross["sr"]["gross_total_revenue"]
+
+    baseline_total_revenue = gross["gross_total_revenue"]
+
+    # 套利不吃 bid_ratio
+    allocated_arb = apply_allocation_adjustment(
+        gross_arb,
+        input_data.arb_allocation_ratio,
+    )
+    realized_arb = apply_realization_adjustment(
+        allocated_arb,
+        input_data.arb_realization_ratio,
+    )
+
+    # DR / SR 吃 bid_ratio
+    bid_adjusted_dr = apply_bid_adjustment(gross_dr, input_data.bid_ratio)
+    bid_adjusted_sr = apply_bid_adjustment(gross_sr, input_data.bid_ratio)
+
+    allocated_dr = apply_allocation_adjustment(
+        bid_adjusted_dr,
+        input_data.dr_allocation_ratio,
+    )
+    allocated_sr = apply_allocation_adjustment(
+        bid_adjusted_sr,
+        input_data.sr_allocation_ratio,
+    )
+
+    realized_dr = apply_realization_adjustment(
+        allocated_dr,
+        input_data.dr_realization_ratio,
+    )
+    realized_sr = apply_realization_adjustment(
+        allocated_sr,
+        input_data.sr_realization_ratio,
+    )
+
+    audited_total_revenue = realized_arb + realized_dr + realized_sr
+    deductions = calculate_owner_fee_deductions(audited_total_revenue, input_data)
+    owner_net_revenue = audited_total_revenue - deductions["total_deductions"]
+
+    return {
+        "baseline_revenue": baseline_total_revenue,
+        "gross": gross,
+        "audited_arbitrage_revenue": realized_arb,
+        "audited_dr_revenue": realized_dr,
+        "audited_sr_revenue": realized_sr,
+        "audited_total_revenue": audited_total_revenue,
+        "deductions": deductions,
+        "owner_net_revenue": owner_net_revenue,
+    }
