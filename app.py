@@ -16,43 +16,42 @@ scenario_map = {
 }
 scenario_en = scenario_map[scenario]
 
-# CSV 上傳
-uploaded_file = st.file_uploader("上傳全年負載 CSV", type=["csv"])
-
-# 手動輸入欄位
-# 省略，跟前面示範一樣
-
-if st.button("跑審計", type="primary"):
-    x = StorageSiteInput(
-        # 全部欄位從輸入取值
-    )
-
-    # 套情境
-    x = apply_scenario(x, scenario_en)
-
-    # CSV 上傳
-    if uploaded_file is not None:
+if uploaded_file is not None:
+    try:
         df = pd.read_csv(uploaded_file)
+        st.write("CSV欄位：", list(df.columns))
+        st.dataframe(df.head())
+
+        # 嘗試自動標準化欄位名稱
+        rename_map = {}
+
+        for col in df.columns:
+            col_lower = str(col).strip().lower()
+
+            if col_lower in ["month", "月份"]:
+                rename_map[col] = "month"
+            elif col_lower in ["load_kwh", "kwh", "用電量", "用電度數", "電量"]:
+                rename_map[col] = "load_kwh"
+            elif col_lower in ["date", "日期", "timestamp", "time"]:
+                rename_map[col] = "date"
+
+        df = df.rename(columns=rename_map)
+
+        # 如果沒有 month，但有 date，就從 date 推出 month
+        if "month" not in df.columns and "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"], errors="coerce")
+            df["month"] = df["date"].dt.month
+
+        # 檢查必要欄位
+        required_cols = {"month", "load_kwh"}
+        missing = required_cols - set(df.columns)
+        if missing:
+            st.error(f"CSV 缺少必要欄位：{missing}")
+            st.stop()
+
         x.annual_load_profile = df
-        st.dataframe(df)
+        st.success("已成功讀取全年負載資料")
 
-    # 策略規則
-    x, strategy_notes = apply_strategy_constraints(x)
-    strategy_warnings = generate_strategy_warnings(x)
-
-    # 計算審計
-    result = calculate_audited_revenue_breakdown(x)
-    baseline = result["baseline_revenue"]
-    audited = result["audited_total_revenue"]
-    owner_net = result["owner_net_revenue"]
-
-    # 顯示結果
-    c1, c2, c3 = st.columns(3)
-    c1.metric("業務收入", f"{baseline:,.0f}")
-    c2.metric("審計收入", f"{audited:,.0f}")
-    c3.metric("淨收益", f"{owner_net:,.0f}")
-
-    for note in strategy_notes:
-        st.info(note)
-    for w in strategy_warnings:
-        st.warning(w)
+    except Exception as e:
+        st.error(f"CSV 解析失敗: {e}")
+        st.stop()
