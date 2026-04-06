@@ -26,7 +26,7 @@ if st.button("跑審計"):
         capacity_kwh=capacity_kwh,
     )
 
-    if uploaded_file is not None:
+if uploaded_file is not None:
     try:
         df = pd.read_csv(uploaded_file)
 
