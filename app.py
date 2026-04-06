@@ -19,7 +19,37 @@ uploaded_file = st.file_uploader("上傳全年負載 CSV", type=["csv"])
 
 power_kw = st.number_input("PCS 功率 (kW)", value=500.0)
 capacity_kwh = st.number_input("電池容量 (kWh)", value=1044.0)
+# ===== 先定義所有輸入 =====
+power_kw = st.number_input("PCS 功率 (kW)", value=500.0)
+capacity_kwh = st.number_input("電池容量 (kWh)", value=1044.0)
+dod = st.number_input("DoD", value=0.9)
+efficiency = st.number_input("效率", value=0.86)
+soh = st.number_input("SOH", value=1.0)
+soc_window_ratio = st.number_input("SOC window", value=0.85)
 
+summer_spread = st.number_input("夏季價差", value=2.5)
+non_summer_spread = st.number_input("非夏季價差", value=1.8)
+
+summer_cycles_per_day = st.number_input("夏季 cycles/day", value=1.0)
+non_summer_cycles_per_day = st.number_input("非夏季 cycles/day", value=0.8)
+
+dr_capacity_kw = st.number_input("DR 容量", value=250.0)
+dr_hours = st.number_input("DR 時數", value=4.0)
+dr_rate = st.number_input("DR 費率", value=1.84)
+dr_execution_rate = st.number_input("DR 執行率", value=0.9)
+
+sr_capacity_kw = st.number_input("SR 容量", value=350.0)
+sr_price = st.number_input("SR 價格", value=400.0)
+sr_hours_per_day = st.number_input("SR 每日時數", value=2.0)
+sr_execution_rate = st.number_input("SR 執行率", value=0.9)
+
+aggregator_share_ratio = st.number_input("分潤比例", value=0.2)
+aggregator_fixed_fee = st.number_input("固定費", value=400000.0)
+ems_subscription_fee = st.number_input("EMS 年費", value=70992.0)
+insurance_cost = st.number_input("保險費", value=120060.0)
+om_cost = st.number_input("維運費", value=204102.0)
+deposit_amount = st.number_input("保證金", value=153300.0)
+deposit_cost_rate = st.number_input("保證金成本率", value=0.05)
 if st.button("跑審計"):
 
     # 先建立模型物件
