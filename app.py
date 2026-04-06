@@ -1,11 +1,12 @@
 # app.py
+import streamlit as st
+import pandas as pd
 from storage_site_input import StorageSiteInput
 from audit_layer import calculate_audited_revenue_breakdown, apply_scenario
 from strategy_rules import apply_strategy_constraints, generate_strategy_warnings
 
+# ⚠️ 一定要在所有 Streamlit 元件之前呼叫
 st.set_page_config(page_title="儲能案場審計工具", layout="wide")
-st.title("儲能案場審計工具")
-
 # 情境選擇
 scenario = st.selectbox("選擇情境", ["樂觀情境", "基準情境", "保守情境"])
 scenario_map = {
