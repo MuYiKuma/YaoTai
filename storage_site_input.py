@@ -1,65 +1,45 @@
-import pandas as pd
+# storage_site_input.py
+
 from dataclasses import dataclass, field
+import pandas as pd
+
+@dataclass
 class StorageSiteInput:
-    """儲能系統模型。
+    # 基本規格
+    power_kw: float = 500.0
+    capacity_kwh: float = 1000.0
+    dod: float = 0.9
+    efficiency: float = 0.92
+    soh: float = 1.0
+    soc_window_ratio: float = 1.0
 
-    這個 schema 同時支援：
-    1. 業務端的毛收入試算
-    2. 審計端的調整參數與業主淨收益評估
-    """
+    # 套利參數
+    summer_spread: float = 2.5
+    non_summer_spread: float = 2.0
+    summer_cycles_per_day: float = 1.5
+    non_summer_cycles_per_day: float = 1.2
 
-    # 基本
-    contract_capacity_kw: float = field(default=499.0, metadata={"unit": "kW"})
-    power_kw: float = field(default=500.0, metadata={"unit": "kW"})
-    capacity_kwh: float = field(default=1000.0, metadata={"unit": "kWh"})
+    # DR 參數
+    dr_capacity_kw: float = 0.0
+    dr_hours: float = 2.0
+    dr_rate: float = 0.0
+    dr_execution_rate: float = 1.0
+    dr_discount_ratio: float = 1.0
 
-    # 電池
-    dod: float = field(default=0.9, metadata={"unit": "ratio"})
-    efficiency: float = field(default=0.92, metadata={"unit": "ratio"})
-    soh: float = field(default=1.0, metadata={"unit": "ratio"})
-    degradation_rate: float = field(default=0.02, metadata={"unit": "ratio/year"})
-    soc_window_ratio: float = field(default=1.0, metadata={"unit": "ratio"})
+    # SR 參數
+    sr_capacity_kw: float = 0.0
+    sr_price: float = 0.0
+    sr_hours_per_day: float = 0.0
+    sr_execution_rate: float = 1.0
 
-    # 套利
-    summer_spread: float = field(default=2.5, metadata={"unit": "NTD/kWh"})
-    non_summer_spread: float = field(default=2.0, metadata={"unit": "NTD/kWh"})
-    summer_cycles_per_day: float = field(default=1.5, metadata={"unit": "cycle/day"})
-    non_summer_cycles_per_day: float = field(default=1.2, metadata={"unit": "cycle/day"})
+    # 成本與費用
+    aggregator_share_ratio: float = 0.0
+    aggregator_fixed_fee: float = 0.0
+    ems_subscription_fee: float = 0.0
+    insurance_cost: float = 0.0
+    om_cost: float = 0.0
+    deposit_amount: float = 0.0
+    deposit_cost_rate: float = 0.0
 
-    # 需量反應（DR）
-    dr_capacity_kw: float = field(default=0.0, metadata={"unit": "kW"})
-    dr_hours: float = field(default=2.0, metadata={"unit": "hour/event"})
-    dr_rate: float = field(default=0.0, metadata={"unit": "NTD/kW"})
-    dr_execution_rate: float = field(default=1.0, metadata={"unit": "ratio"})
-    dr_discount_ratio: float = field(default=1.0, metadata={"unit": "ratio"})
-
-    # 即時備轉（SR）
-    sr_capacity_kw: float = field(default=0.0, metadata={"unit": "kW"})
-    sr_price: float = field(default=0.0, metadata={"unit": "NTD/kW"})
-    sr_hours_per_day: float = field(default=0.0, metadata={"unit": "hour/day"})
-    sr_execution_rate: float = field(default=1.0, metadata={"unit": "ratio"})
-
-    # 審計調整參數
-    bid_ratio: float = field(default=1.0, metadata={"unit": "ratio"})
-    arb_allocation_ratio: float = field(default=1.0, metadata={"unit": "ratio"})
-    dr_allocation_ratio: float = field(default=1.0, metadata={"unit": "ratio"})
-    sr_allocation_ratio: float = field(default=1.0, metadata={"unit": "ratio"})
-    arb_realization_ratio: float = field(default=1.0, metadata={"unit": "ratio"})
-    dr_realization_ratio: float = field(default=1.0, metadata={"unit": "ratio"})
-    sr_realization_ratio: float = field(default=1.0, metadata={"unit": "ratio"})
-
-    # 商務成本 / 業主淨收益
-    aggregator_share_ratio: float = field(default=0.0, metadata={"unit": "ratio"})
-    aggregator_fixed_fee: float = field(default=0.0, metadata={"unit": "NTD/year"})
-    ems_subscription_fee: float = field(default=0.0, metadata={"unit": "NTD/year"})
-    insurance_cost: float = field(default=0.0, metadata={"unit": "NTD/year"})
-    om_cost: float = field(default=0.0, metadata={"unit": "NTD/year"})
-    deposit_amount: float = field(default=0.0, metadata={"unit": "NTD"})
-    deposit_cost_rate: float = field(default=0.0, metadata={"unit": "ratio/year"})
-
-    # 資本支出 / 增補
-    capex: float = field(default=0.0, metadata={"unit": "NTD"})
-    augmentation_year: int | None = field(default=None, metadata={"unit": "year"})
-    augmentation_capex: float = field(default=0.0, metadata={"unit": "NTD"})
-    # 在 dataclass 裡面加
+    # ✅ 新增全年負載欄位，支援 CSV / Excel
     annual_load_profile: pd.DataFrame = field(default_factory=lambda: pd.DataFrame())
