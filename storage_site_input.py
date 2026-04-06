@@ -65,3 +65,5 @@ class StorageSiteInput:
     capex: float = field(default=0.0, metadata={"unit": "NTD"})
     augmentation_year: int | None = field(default=None, metadata={"unit": "year"})
     augmentation_capex: float = field(default=0.0, metadata={"unit": "NTD"})
+    # 在 dataclass 裡面加
+annual_load_profile: pd.DataFrame = field(default_factory=lambda: pd.DataFrame())
