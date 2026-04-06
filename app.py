@@ -27,14 +27,36 @@ if st.button("跑審計"):
     )
 
     if uploaded_file is not None:
+    try:
         df = pd.read_csv(uploaded_file)
-        st.write("CSV欄位：", list(df.columns))
+
+        st.write("CSV 欄位：", list(df.columns))
         st.dataframe(df.head())
+
+        # ===== 依你現在的 RawData 格式做標準化 =====
+        # 原始欄位：
+        # Time, Power(kW)
+
+        if "Time" in df.columns and "Power(kW)" in df.columns:
+            df["date"] = pd.to_datetime(df["Time"], errors="coerce")
+            df["month"] = df["date"].dt.month
+
+            # 15 分鐘功率(kW) → 當筆電量(kWh)
+            df["load_kwh"] = df["Power(kW)"] * 0.25
+
+        # 檢查必要欄位
+        required_cols = {"month", "load_kwh"}
+        missing = required_cols - set(df.columns)
+        if missing:
+            st.error(f"CSV 缺少必要欄位：{missing}")
+            st.stop()
+
         x.annual_load_profile = df
+        st.success("已成功讀取全年負載資料")
 
-    x = apply_scenario(x, scenario_en)
-    x, strategy_notes = apply_strategy_constraints(x)
-    strategy_warnings = generate_strategy_warnings(x)
+        st.subheader("標準化後資料")
+        st.dataframe(df[["date", "month", "Power(kW)", "load_kwh"]].head())
 
-    result = calculate_audited_revenue_breakdown(x)
-    st.write(result)
+    except Exception as e:
+        st.error(f"CSV 解析失敗: {e}")
+        st.stop()
