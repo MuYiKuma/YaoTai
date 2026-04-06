@@ -21,9 +21,33 @@ power_kw = st.number_input("PCS 功率 (kW)", value=500.0)
 capacity_kwh = st.number_input("電池容量 (kWh)", value=1044.0)
 
 if st.button("跑審計"):
+    # 先建立模型物件
     x = StorageSiteInput(
         power_kw=power_kw,
         capacity_kwh=capacity_kwh,
+        dod=dod,
+        efficiency=efficiency,
+        soh=soh,
+        soc_window_ratio=soc_window_ratio,
+        summer_spread=summer_spread,
+        non_summer_spread=non_summer_spread,
+        summer_cycles_per_day=summer_cycles_per_day,
+        non_summer_cycles_per_day=non_summer_cycles_per_day,
+        dr_capacity_kw=dr_capacity_kw,
+        dr_hours=dr_hours,
+        dr_rate=dr_rate,
+        dr_execution_rate=dr_execution_rate,
+        sr_capacity_kw=sr_capacity_kw,
+        sr_price=sr_price,
+        sr_hours_per_day=sr_hours_per_day,
+        sr_execution_rate=sr_execution_rate,
+        aggregator_share_ratio=aggregator_share_ratio,
+        aggregator_fixed_fee=aggregator_fixed_fee,
+        ems_subscription_fee=ems_subscription_fee,
+        insurance_cost=insurance_cost,
+        om_cost=om_cost,
+        deposit_amount=deposit_amount,
+        deposit_cost_rate=deposit_cost_rate,
     )
 
 if uploaded_file is not None:
