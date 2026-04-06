@@ -1,9 +1,5 @@
-from __future__ import annotations
-
+import pandas as pd
 from dataclasses import dataclass, field
-
-
-@dataclass(slots=True)
 class StorageSiteInput:
     """儲能系統模型。
 
