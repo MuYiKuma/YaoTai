@@ -41,13 +41,16 @@ class StorageSiteInput:
     deposit_amount: float = 0.0
     deposit_cost_rate: float = 0.0
 
-    # 🔹 新增全年負載欄位，支援 CSV / Excel
+    # 全年負載
     annual_load_profile: pd.DataFrame = field(default_factory=lambda: pd.DataFrame())
 
-    # 🔹 新增 allocation / realization 欄位，用於 apply_scenario
+    # allocation / realization 欄位
     arb_allocation_ratio: float = 0.0
     dr_allocation_ratio: float = 0.0
     sr_allocation_ratio: float = 0.0
     arb_realization_ratio: float = 1.0
     dr_realization_ratio: float = 1.0
     sr_realization_ratio: float = 1.0
+
+    # bid_ratio
+    bid_ratio: float = 1.0
